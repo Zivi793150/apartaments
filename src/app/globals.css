@@ -1,26 +1,202 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Warm pastel palette tuned to the architectural renders */
+  --background: #F5F3F0; /* warm plaster page bg - softer */
+  --foreground: #1A1D21; /* deep graphite text */
+  --surface: #FAF8F5;   /* card / surface - lighter */
+  --muted: #6F7B84;     /* slate grey for secondary text */
+
+  /* Accents - Enhanced pastel palette */
+  --brand: #C47C57;     /* copper/terracotta accent (buttons, links) */
+  --brand-foreground: #FFFFFF;
+  --brand-light: #E4C4B0; /* soft pastel brand */
+  --brand-dark: #A86544;
+  
+  --accent-terra: #B76545; /* roof tile tone */
+  --accent-satin: #D4D8DE; /* satin metal rails - softer */
+  --accent-pastel-1: #F0E8E2; /* cream */
+  --accent-pastel-2: #E8E5E0; /* beige */
+  --accent-pastel-3: #DED6CE; /* warm grey */
+
+  /* UI outlines */
+  --ring: #D4D8DE;
+  --border: #E8E5E0;
+  
+  /* Gradients */
+  --gradient-warm: linear-gradient(135deg, #F5F3F0 0%, #E8E5E0 100%);
+  --gradient-brand: linear-gradient(135deg, #C47C57 0%, #B76545 100%);
+  --gradient-pastel: linear-gradient(135deg, #FAF8F5 0%, #F0E8E2 50%, #E8E5E0 100%);
 }
 
 @theme inline {
+  /* map to Tailwind tokens */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-accent-terra: var(--accent-terra);
+  --color-accent-satin: var(--accent-satin);
+  --color-ring: var(--ring);
+  --color-border: var(--border);
+
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0d1014;
+    --foreground: #e8ebef;
+    --surface: #141920;
+    --muted: #94a2ae;
+    --brand: #D39676;
+    --brand-light: #E4B89A;
+    --brand-dark: #C4845F;
+    --accent-terra: #D08C6D;
+    --accent-satin: #5A6571;
+    --accent-pastel-1: #1A1F26;
+    --accent-pastel-2: #161B22;
+    --accent-pastel-3: #1F252A;
+    --border: #1f252a;
+    --ring: #2A3340;
+    --gradient-warm: linear-gradient(135deg, #0d1014 0%, #161B22 100%);
+    --gradient-brand: linear-gradient(135deg, #D39676 0%, #C4845F 100%);
+    --gradient-pastel: linear-gradient(135deg, #141920 0%, #1A1F26 50%, #1F252A 100%);
   }
 }
 
+/* Manual theme override */
+:root[data-theme="dark"] {
+  --background: #0d1014;
+  --foreground: #e8ebef;
+  --surface: #141920;
+  --muted: #94a2ae;
+  --brand: #D39676;
+  --brand-light: #E4B89A;
+  --brand-dark: #C4845F;
+  --accent-terra: #D08C6D;
+  --accent-satin: #5A6571;
+  --accent-pastel-1: #1A1F26;
+  --accent-pastel-2: #161B22;
+  --accent-pastel-3: #1F252A;
+  --border: #1f252a;
+  --ring: #2A3340;
+  --gradient-warm: linear-gradient(135deg, #0d1014 0%, #161B22 100%);
+  --gradient-brand: linear-gradient(135deg, #D39676 0%, #C4845F 100%);
+  --gradient-pastel: linear-gradient(135deg, #141920 0%, #1A1F26 50%, #1F252A 100%);
+}
+
+html, body { height: 100%; }
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(16px, 1.05vw + 14px, 18px);
+}
+
+/* Typography */
+@font-face { font-family: 'BMDOHYEON'; src: url('/fonts/BMDOHYEON_otf.otf') format('opentype'); font-display: swap; }
+@font-face { font-family: 'ArialBlackPrimer'; src: url('/fonts/ArialBlackPrimer.ttf') format('truetype'); font-display: swap; }
+.ff-elegant { font-family: var(--font-display), serif; }
+.ff-strong { font-family: 'ArialBlackPrimer','BMDOHYEON', system-ui, sans-serif; }
+h1, h2, h3 { font-family: var(--font-display), serif; letter-spacing: 0.02em; }
+h1 { font-weight: 500; }
+h2, h3 { font-weight: 500; }
+
+/***** utility *****/
+.container-xl { width: 100%; max-width: 1440px; margin-inline: auto; padding-inline: 24px; }
+
+/* smooth underline accent */
+.link-accent { position: relative; }
+.link-accent::after { content: ""; position: absolute; left: 0; bottom: -2px; height: 1px; width: 0; background: var(--brand); transition: width .25s ease; }
+.link-accent:hover::after { width: 100%; }
+
+/* soft animated background with enhanced pastel gradients */
+.bg-art {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: 
+    radial-gradient(60% 60% at 80% 10%, rgba(196,124,87,0.12), transparent 65%),
+    radial-gradient(50% 50% at 10% 80%, rgba(228,196,176,0.08), transparent 60%),
+    radial-gradient(40% 40% at 50% 50%, rgba(244,232,226,0.06), transparent 70%),
+    radial-gradient(55% 55% at 20% 30%, rgba(232,229,224,0.05), transparent 65%);
+  animation: bgFloat 18s ease-in-out infinite alternate;
+}
+@keyframes bgFloat {
+  0% { filter: hue-rotate(0deg) blur(0px); transform: translateY(0px) scale(1); }
+  50% { filter: hue-rotate(4deg) blur(0.3px); transform: translateY(-8px) scale(1.01); }
+  100% { filter: hue-rotate(8deg) blur(0.5px); transform: translateY(-12px) scale(1.02); }
+}
+
+/* Enhanced smooth transitions */
+* {
+  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Scroll animations enhancement */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Enhanced button hover effects */
+.btn-enhanced {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.btn-enhanced::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.btn-enhanced:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.glass-dark {
+  background: rgba(20, 25, 32, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
