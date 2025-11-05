@@ -280,8 +280,8 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         <OrbitControls
           ref={(ctrl:any)=>{(CameraLerp as any).controlsRef=ctrl}}
           enablePan={false}
-          enableZoom={!isMobile}
-          zoomSpeed={0.4}
+          enableZoom={false}
+          zoomSpeed={0}
           enableDamping
           dampingFactor={0.08}
           maxPolarAngle={Math.PI/2.2}

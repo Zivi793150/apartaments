@@ -84,7 +84,14 @@ export default function BuildingPage() {
           </div>
 
           {view === "3d" ? (
-            <BuildingScene3D />
+            <BuildingScene3D 
+              filter={{
+                activeBuilding: slug.toLowerCase() === "a" ? "a" : "b",
+                rooms: null,
+                onlyAvailable: false,
+                hoverFloor: activeFloor
+              }}
+            />
           ) : (
             <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl">
               <AnimatePresence mode="wait">
