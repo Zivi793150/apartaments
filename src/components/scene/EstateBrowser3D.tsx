@@ -281,7 +281,7 @@ function QuickViewModal({
   onFavoriteToggle,
   onClose,
 }: {
-  apartment: PickedUnit;
+  apartment: NonNullable<PickedUnit>;
   isFavorite: boolean;
   onFavoriteToggle: () => void;
   onClose: () => void;
