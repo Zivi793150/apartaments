@@ -110,10 +110,7 @@ export default function BuildingHotspots({
               <motion.button
                 whileHover={{ scale: 1.15 }}
                 whileTap={{ scale: 0.9 }}
-                className="relative flex items-center justify-center w-12 h-12 rounded-full bg-background/95 backdrop-blur-md ring-2 shadow-lg transition-all duration-300"
-                style={{
-                  ringColor: hotspot.building === "a" ? "#C47C57" : "#87919C",
-                }}
+                className={`relative flex items-center justify-center w-12 h-12 rounded-full bg-background/95 backdrop-blur-md ring-2 shadow-lg transition-all duration-300 ${hotspot.building === "a" ? "ring-[#C47C57]" : "ring-[#87919C]"}`}
               >
                 <Home
                   className="w-5 h-5"
