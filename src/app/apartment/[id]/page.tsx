@@ -97,8 +97,7 @@ export default function ApartmentPage() {
             {[
               { k: "Площадь", v: "88.7 м²" },
               { k: "Комнат", v: "2" },
-              { k: "Окна", v: "во двор" },
-              { k: "Отделка", v: "White box" },
+              { k: "Вид", v: "на парк" },
             ].map((row) => (
               <div key={row.k} className="py-2.5 flex items-center justify-between gap-4">
                 <span className="text-muted whitespace-nowrap">{row.k}</span>
@@ -114,7 +113,6 @@ export default function ApartmentPage() {
           >
             <div className="text-sm opacity-80">Стоимость</div>
             <div className="text-2xl md:text-3xl font-medium">43 462 130 ₽</div>
-            <div className="text-xs opacity-60 line-through mt-1">47 232 750 ₽</div>
           </motion.div>
           <div className="flex gap-3 mt-1">
             <motion.a

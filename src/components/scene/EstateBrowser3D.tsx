@@ -220,21 +220,21 @@ export default function EstateBrowser3D() {
                       </div>
                     </div>
                   </div>
-                </div>
+              </div>
               </div>
 
               <div className="flex gap-2">
                 <Link href={`/apartment/${picked.id}`} className="flex-1">
                   <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                     className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-brand text-white px-5 py-2.5 text-sm shadow-lg hover:shadow-xl transition-all duration-300 btn-enhanced"
-                  >
+                >
                     <ExternalLink className="w-4 h-4" />
-                    Открыть план
+                  Открыть план
                   </motion.button>
                 </Link>
-                <motion.button
+                <motion.button 
                   onClick={() => setShowQuickView(true)}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -281,7 +281,7 @@ function QuickViewModal({
   onFavoriteToggle,
   onClose,
 }: {
-  apartment: NonNullable<PickedUnit>;
+  apartment: PickedUnit;
   isFavorite: boolean;
   onFavoriteToggle: () => void;
   onClose: () => void;

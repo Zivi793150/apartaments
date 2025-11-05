@@ -20,16 +20,16 @@ export default function Hero() {
         className="space-y-6 text-center md:text-left"
       >
         <p className="text-xs md:text-sm uppercase tracking-[0.2em] text-muted">Бизнес‑класс</p>
-        <h1 className="text-[clamp(30px,6vw,64px)] leading-[1.05]">
-          Интерактивный комплекс с <span className="text-brand">плавными</span> переходами
+        <h1 className="text-[clamp(32px,6.2vw,68px)] leading-[1.04]">
+          Дома, в которые <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'var(--gradient-brand)' }}>хочется</span> вернуться
         </h1>
-        <p className="text-[17px] md:text-xl text-muted max-w-xl mx-auto md:mx-0 leading-relaxed">
-          Выбирайте корпус, этаж и квартиру. Смотрите 2D/3D планы, интерьер и вид из окна — всё с акцентом на эстетике и удобстве.
+        <p className="text-[16px] md:text-lg text-muted max-w-xl mx-auto md:mx-0 leading-relaxed">
+          Выберите корпус и этаж. Остальное — почувствуете.
         </p>
         <div className="flex gap-3 justify-center md:justify-start">
           <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
             <Link href="/building/a">
-              <Button size="lg" className="btn-enhanced">Выбрать корпус</Button>
+              <Button size="lg" className="btn-enhanced" style={{ backgroundImage: 'var(--gradient-brand)' }}>Выбрать корпус</Button>
             </Link>
           </motion.div>
           <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>

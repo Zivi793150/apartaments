@@ -29,10 +29,10 @@ export default function HomeClient() {
       <section className="mt-8 md:mt-12">
         <div className="container-xl">
           <Reveal delay={0.1}>
-            <h2 className="text-2xl md:text-3xl mb-2 font-medium text-center md:text-left">Интерактивный выбор на фасаде</h2>
+            <h2 className="text-2xl md:text-3xl mb-2 font-medium text-center md:text-left bg-clip-text text-transparent" style={{ backgroundImage: 'var(--gradient-brand)' }}>Выбор на фасаде</h2>
           </Reveal>
           <Reveal delay={0.15}>
-            <p className="text-muted mb-6 text-center md:text-left max-w-2xl">Выберите корпус, этаж, комнаты или только свободные — кликом перейдите к квартире. Наведите курсор на подсказки для быстрой навигации.</p>
+            <p className="text-muted mb-6 text-center md:text-left max-w-2xl">Корпус. Этаж. Квартира. Быстро и красиво.</p>
           </Reveal>
           <Reveal delay={0.2}>
             <div className="relative">
@@ -44,14 +44,14 @@ export default function HomeClient() {
       <Gallery />
       <section id="about" className="container-xl mt-24 md:mt-32 grid gap-6 md:grid-cols-3">
         {[
-          { title: "Плавные анимации", desc: "Профессиональные переходы и микро-анимации для премиального опыта." },
-          { title: "Интерактивные планы", desc: "2D/3D планы и интерактивный выбор квартир с визуализациями." },
-          { title: "Уникальный мобильный UX", desc: "Специально разработанный интерфейс для сенсорных устройств." },
+          { title: "Плавные анимации", desc: "Премиальные переходы и тактильные эффекты." },
+          { title: "Интерактивные планы", desc: "2D/3D и быстрый предпросмотр." },
+          { title: "Мобильный UX", desc: "Красиво, просто, удобно." },
         ].map((item, i) => (
           <Reveal key={i} delay={i * 0.08}>
             <motion.div 
               whileHover={{ y: -6, scale: 1.02 }}
-              className="rounded-2xl bg-surface/60 backdrop-blur-sm p-6 md:p-8 ring-1 ring-border/60 hover:ring-border transition-all duration-300 hover:shadow-xl"
+              className="rounded-2xl bg-surface/70 backdrop-blur-sm p-6 md:p-8 ring-1 ring-border/60 hover:ring-border transition-all duration-300 hover:shadow-xl"
             >
               <h3 className="text-lg font-medium mb-3 text-foreground">{item.title}</h3>
               <p className="text-muted text-[15px] leading-relaxed">{item.desc}</p>

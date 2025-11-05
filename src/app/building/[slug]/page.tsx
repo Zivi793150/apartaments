@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "next/navigation";
-import BuildingScene3D, { type SceneFilter } from "@/components/scene/BuildingScene3D";
+import BuildingScene3D from "@/components/scene/BuildingScene3D";
 
 type ViewMode = "2d" | "3d";
 
@@ -15,12 +15,6 @@ export default function BuildingPage() {
   const [view, setView] = useState<ViewMode>("3d");
   const [activeFloor, setActiveFloor] = useState<number>(6);
   const touchStartY = useRef<number | null>(null);
-
-  // Фильтр для 3D сцены
-  const filter: SceneFilter = useMemo(() => ({
-    activeBuilding: slug.toLowerCase() === "a" ? "a" : slug.toLowerCase() === "b" ? "b" : "all",
-    hoverFloor: activeFloor,
-  }), [slug, activeFloor]);
 
   const facadeImg = "/images/arch-1.jpg";
   const view3dImg = "/images/plan-3d-2.jpg";
@@ -90,7 +84,7 @@ export default function BuildingPage() {
           </div>
 
           {view === "3d" ? (
-            <BuildingScene3D filter={filter} />
+            <BuildingScene3D />
           ) : (
             <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl">
               <AnimatePresence mode="wait">

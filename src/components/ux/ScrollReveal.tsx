@@ -55,7 +55,7 @@ type ParallaxScrollProps = {
   children: ReactNode;
   className?: string;
   speed?: number;
-  offset?: any;
+  offset?: [string, string];
 };
 
 export function ParallaxScroll({

@@ -1,32 +1,32 @@
 @import "tailwindcss";
 
 :root {
-  /* Warm pastel palette tuned to the architectural renders */
-  --background: #F5F3F0; /* warm plaster page bg - softer */
-  --foreground: #1A1D21; /* deep graphite text */
-  --surface: #FAF8F5;   /* card / surface - lighter */
-  --muted: #6F7B84;     /* slate grey for secondary text */
+  /* Brighter premium palette (minimal, colorful, elegant) */
+  --background: #F7F6F3; /* brighter plaster */
+  --foreground: #14171B; /* refined graphite */
+  --surface: #FFFCF8;   /* airy card */
+  --muted: #73818B;     /* soft slate */
 
-  /* Accents - Enhanced pastel palette */
-  --brand: #C47C57;     /* copper/terracotta accent (buttons, links) */
+  /* Accents */
+  --brand: #D67E57;            /* warmer copper */
   --brand-foreground: #FFFFFF;
-  --brand-light: #E4C4B0; /* soft pastel brand */
-  --brand-dark: #A86544;
+  --brand-light: #F2CDB7;      /* brighter pastel */
+  --brand-dark: #B76843;
   
-  --accent-terra: #B76545; /* roof tile tone */
-  --accent-satin: #D4D8DE; /* satin metal rails - softer */
-  --accent-pastel-1: #F0E8E2; /* cream */
-  --accent-pastel-2: #E8E5E0; /* beige */
-  --accent-pastel-3: #DED6CE; /* warm grey */
+  --accent-terra: #C96E4B;     /* vivid terra */
+  --accent-satin: #CCD3DB;     /* lighter satin */
+  --accent-pastel-1: #FFF1E7;  /* peach cream */
+  --accent-pastel-2: #F3EEE8;  /* soft beige */
+  --accent-pastel-3: #E6DED6;  /* warm grey */
 
   /* UI outlines */
-  --ring: #D4D8DE;
-  --border: #E8E5E0;
+  --ring: #D8DEE6;
+  --border: #ECE7E1;
   
   /* Gradients */
-  --gradient-warm: linear-gradient(135deg, #F5F3F0 0%, #E8E5E0 100%);
-  --gradient-brand: linear-gradient(135deg, #C47C57 0%, #B76545 100%);
-  --gradient-pastel: linear-gradient(135deg, #FAF8F5 0%, #F0E8E2 50%, #E8E5E0 100%);
+  --gradient-warm: linear-gradient(135deg, #FFF6F0 0%, #F3EEE8 100%);
+  --gradient-brand: linear-gradient(135deg, #D67E57 0%, #C96E4B 100%);
+  --gradient-pastel: linear-gradient(135deg, #FFFCF8 0%, #FFF1E7 50%, #F3EEE8 100%);
 }
 
 @theme inline {
@@ -52,23 +52,23 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0d1014;
-    --foreground: #e8ebef;
-    --surface: #141920;
-    --muted: #94a2ae;
-    --brand: #D39676;
-    --brand-light: #E4B89A;
-    --brand-dark: #C4845F;
-    --accent-terra: #D08C6D;
-    --accent-satin: #5A6571;
-    --accent-pastel-1: #1A1F26;
-    --accent-pastel-2: #161B22;
-    --accent-pastel-3: #1F252A;
-    --border: #1f252a;
-    --ring: #2A3340;
-    --gradient-warm: linear-gradient(135deg, #0d1014 0%, #161B22 100%);
-    --gradient-brand: linear-gradient(135deg, #D39676 0%, #C4845F 100%);
-    --gradient-pastel: linear-gradient(135deg, #141920 0%, #1A1F26 50%, #1F252A 100%);
+    --background: #0c0f13;
+    --foreground: #edf1f6;
+    --surface: #151a21;
+    --muted: #98a7b4;
+    --brand: #E08E68;
+    --brand-light: #F0BBA1;
+    --brand-dark: #CD7B55;
+    --accent-terra: #DB8D6B;
+    --accent-satin: #63707D;
+    --accent-pastel-1: #1A2027;
+    --accent-pastel-2: #161C23;
+    --accent-pastel-3: #1F262D;
+    --border: #1b2128;
+    --ring: #2D3745;
+    --gradient-warm: linear-gradient(135deg, #0c0f13 0%, #161C23 100%);
+    --gradient-brand: linear-gradient(135deg, #E08E68 0%, #CD7B55 100%);
+    --gradient-pastel: linear-gradient(135deg, #151a21 0%, #1A2027 50%, #1F262D 100%);
   }
 }
 
@@ -78,11 +78,11 @@
   --foreground: #e8ebef;
   --surface: #141920;
   --muted: #94a2ae;
-  --brand: #D39676;
-  --brand-light: #E4B89A;
-  --brand-dark: #C4845F;
-  --accent-terra: #D08C6D;
-  --accent-satin: #5A6571;
+  --brand: #E08E68;
+  --brand-light: #F0BBA1;
+  --brand-dark: #CD7B55;
+  --accent-terra: #DB8D6B;
+  --accent-satin: #63707D;
   --accent-pastel-1: #1A1F26;
   --accent-pastel-2: #161B22;
   --accent-pastel-3: #1F252A;
