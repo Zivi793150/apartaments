@@ -67,7 +67,8 @@ export function ParallaxScroll({
   const ref = useRef(null);
   const { scrollYProgress } = useScroll({
     target: ref,
-    offset,
+    // Cast to satisfy framer-motion's stricter tuple type in TS
+    offset: offset as any,
   });
   
   const y = useTransform(scrollYProgress, [0, 1], [0, speed * 100]);
