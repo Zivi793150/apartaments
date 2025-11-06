@@ -14,15 +14,18 @@ export default function Footer() {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.5, type: "spring", stiffness: 300 }}
           >
-            <div className="flex items-center gap-2 mb-4">
+            <motion.div 
+              className="flex items-center gap-2 mb-4"
+              whileHover={{ scale: 1.05 }}
+            >
               <Building2 className="w-5 h-5 text-brand" />
-              <span className="text-[18px] font-display">
-                La <span className="text-brand">Srmonia</span> Costerra
+              <span className="text-[18px] md:text-[20px] font-display font-bold">
+                La <span className="text-brand font-bold">Srmonia</span> Costerra
               </span>
-            </div>
-            <p className="text-sm text-muted leading-relaxed">
+            </motion.div>
+            <p className="text-sm md:text-base text-muted leading-relaxed font-semibold">
               Премиальные жилые комплексы с инновационными решениями и современным дизайном.
             </p>
           </motion.div>
@@ -32,19 +35,28 @@ export default function Footer() {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.4, delay: 0.1 }}
+            transition={{ duration: 0.5, delay: 0.1, type: "spring", stiffness: 300 }}
           >
-            <h3 className="text-sm font-medium mb-4 text-foreground">Навигация</h3>
-            <nav className="flex flex-col gap-3 text-sm">
-              <a className="link-accent text-muted hover:text-foreground transition-colors" href="#master">
-                План квартала
-              </a>
-              <a className="link-accent text-muted hover:text-foreground transition-colors" href="#plans">
-                Планы этажей
-              </a>
-              <a className="link-accent text-muted hover:text-foreground transition-colors" href="#about">
-                О проекте
-              </a>
+            <h3 className="text-sm md:text-base font-bold mb-4 md:mb-6 text-foreground">Навигация</h3>
+            <nav className="flex flex-col gap-3 md:gap-4 text-sm md:text-base">
+              {[
+                { href: "#master", label: "План квартала" },
+                { href: "#plans", label: "Планы этажей" },
+                { href: "#about", label: "О проекте" },
+              ].map((item, idx) => (
+                <motion.a 
+                  key={item.href}
+                  href={item.href}
+                  className="link-accent text-muted hover:text-foreground transition-colors font-semibold"
+                  initial={{ opacity: 0, x: -10 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: 0.2 + idx * 0.05 }}
+                  whileHover={{ x: 4 }}
+                >
+                  {item.label}
+                </motion.a>
+              ))}
             </nav>
           </motion.div>
 
@@ -53,22 +65,35 @@ export default function Footer() {
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.4, delay: 0.2 }}
+            transition={{ duration: 0.5, delay: 0.2, type: "spring", stiffness: 300 }}
           >
-            <h3 className="text-sm font-medium mb-4 text-foreground">Контакты</h3>
-            <div className="flex flex-col gap-3 text-sm text-muted">
-              <a href="tel:+74954324768" className="flex items-center gap-2 hover:text-brand transition-colors">
-                <Phone className="w-4 h-4" />
+            <h3 className="text-sm md:text-base font-bold mb-4 md:mb-6 text-foreground">Контакты</h3>
+            <div className="flex flex-col gap-3 md:gap-4 text-sm md:text-base">
+              <motion.a 
+                href="tel:+74954324768" 
+                className="flex items-center gap-2 hover:text-brand transition-colors font-semibold text-muted"
+                whileHover={{ x: 4 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Phone className="w-4 h-4 md:w-5 md:h-5" />
                 +7 (495) 432-47-68
-              </a>
-              <a href="mailto:info@example.com" className="flex items-center gap-2 hover:text-brand transition-colors">
-                <Mail className="w-4 h-4" />
+              </motion.a>
+              <motion.a 
+                href="mailto:info@example.com" 
+                className="flex items-center gap-2 hover:text-brand transition-colors font-semibold text-muted"
+                whileHover={{ x: 4 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Mail className="w-4 h-4 md:w-5 md:h-5" />
                 info@example.com
-              </a>
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              </motion.a>
+              <motion.div 
+                className="flex items-start gap-2 font-semibold text-muted"
+                whileHover={{ x: 4 }}
+              >
+                <MapPin className="w-4 h-4 md:w-5 md:h-5 mt-0.5 flex-shrink-0" />
                 <span>Москва, ул. Примерная, д. 1</span>
-              </div>
+              </motion.div>
             </div>
           </motion.div>
         </div>

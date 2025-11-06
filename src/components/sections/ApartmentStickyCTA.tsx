@@ -8,17 +8,23 @@ export default function ApartmentStickyCTA({ id }: { id: string }) {
     <motion.div
       initial={{ y: 100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 100, opacity: 0 }}
       transition={{ duration: 0.5, ease: [0.22, 0.61, 0.36, 1] }}
-      className="fixed left-0 right-0 bottom-0 z-40"
+      className="fixed left-0 right-0 bottom-0 z-40 px-2 md:px-4 pb-2 md:pb-4"
     >
-      <div className="mx-auto max-w-[1200px] px-3 pb-3">
-        <div className="rounded-full bg-background/90 backdrop-blur-md ring-1 ring-border shadow-2xl flex items-center gap-3 p-2">
-          <div className="text-sm text-muted hidden md:block font-medium">Квартира {id}</div>
+      <div className="mx-auto max-w-[1200px]">
+        <motion.div 
+          className="rounded-full md:rounded-2xl bg-background/95 backdrop-blur-xl ring-1 ring-border/80 shadow-2xl flex items-center gap-2 md:gap-3 p-2 md:p-3"
+          whileHover={{ scale: 1.01 }}
+        >
+          <div className="text-xs md:text-sm text-muted font-bold px-2 md:px-3 truncate">
+            {id}
+          </div>
           <motion.a
             href={`/apartment/${id}`}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="flex-1 inline-flex items-center justify-center rounded-full bg-brand text-white px-5 py-2.5 text-sm shadow-md hover:shadow-lg transition-all duration-300 btn-enhanced"
+            whileHover={{ scale: 1.05, y: -2 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex-1 inline-flex items-center justify-center rounded-full bg-gradient-brand text-white px-4 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 btn-enhanced"
           >
             Открыть план
           </motion.a>
@@ -26,11 +32,11 @@ export default function ApartmentStickyCTA({ id }: { id: string }) {
             href="#master"
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="px-4 py-2 rounded-full ring-1 ring-border text-sm hidden md:inline-flex hover:bg-surface transition-colors"
+            className="px-3 md:px-4 py-2 md:py-2.5 rounded-full ring-1 ring-border/60 text-xs md:text-sm font-semibold hidden md:inline-flex hover:bg-surface/80 transition-colors"
           >
             К фасаду
           </motion.a>
-        </div>
+        </motion.div>
       </div>
     </motion.div>
   );

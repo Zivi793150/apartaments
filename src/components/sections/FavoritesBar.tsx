@@ -107,15 +107,15 @@ export default function FavoritesBar() {
               className="fixed inset-0 bg-foreground/40 backdrop-blur-sm z-40"
             />
             <motion.div
-              initial={{ x: 400, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 400, opacity: 0 }}
-              transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="fixed right-4 bottom-32 md:bottom-36 w-[min(90vw,380px)] bg-background/95 backdrop-blur-md rounded-2xl shadow-2xl ring-1 ring-border z-50 p-4 max-h-[60vh] overflow-y-auto"
+              initial={{ x: 400, opacity: 0, scale: 0.95 }}
+              animate={{ x: 0, opacity: 1, scale: 1 }}
+              exit={{ x: 400, opacity: 0, scale: 0.95 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="fixed right-2 md:right-4 bottom-20 md:bottom-32 w-[calc(100vw-16px)] md:w-[min(90vw,380px)] bg-background/95 backdrop-blur-xl rounded-2xl md:rounded-3xl shadow-2xl ring-1 ring-border/80 z-50 p-4 md:p-6 max-h-[65vh] overflow-y-auto scrollbar-hide"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium">Избранное ({favorites.length})</h3>
+              <div className="flex items-center justify-between mb-4 md:mb-6">
+                <h3 className="text-lg md:text-xl font-bold">Избранное ({favorites.length})</h3>
                 <div className="flex gap-2">
                   {favorites.length >= 2 && (
                     <motion.button
@@ -138,38 +138,39 @@ export default function FavoritesBar() {
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 md:space-y-3">
                 {favorites.map((apt, i) => (
                   <motion.div
                     key={apt.id}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="flex items-center justify-between p-3 rounded-xl bg-surface ring-1 ring-border hover:shadow-md transition-all group"
+                    initial={{ opacity: 0, x: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    transition={{ delay: i * 0.05, type: "spring", stiffness: 300 }}
+                    whileHover={{ y: -2, scale: 1.01 }}
+                    className="flex items-center justify-between p-3 md:p-4 rounded-xl md:rounded-2xl bg-gradient-to-br from-surface/90 to-surface/70 ring-1 ring-border/60 hover:ring-border hover:shadow-lg transition-all duration-300 group card-hover"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm truncate">{apt.id}</div>
-                      <div className="text-xs text-muted mt-0.5">
+                      <div className="font-bold text-sm md:text-base truncate">{apt.id}</div>
+                      <div className="text-xs md:text-sm text-muted mt-1 font-semibold">
                         {apt.area} м² · {apt.rooms}к
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-2">
                       <Link href={`/apartment/${apt.id}`}>
                         <motion.div
-                          whileHover={{ scale: 1.1 }}
+                          whileHover={{ scale: 1.15, rotate: 5 }}
                           whileTap={{ scale: 0.9 }}
-                          className="p-1.5 rounded-lg bg-brand/10 hover:bg-brand text-brand hover:text-white transition-colors"
+                          className="p-2 md:p-2.5 rounded-lg bg-gradient-brand hover:shadow-md text-white transition-all"
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
+                          <ExternalLink className="w-4 h-4 md:w-5 md:h-5" />
                         </motion.div>
                       </Link>
                       <motion.button
                         onClick={() => removeFavorite(apt.id)}
-                        whileHover={{ scale: 1.1 }}
+                        whileHover={{ scale: 1.15, rotate: -5 }}
                         whileTap={{ scale: 0.9 }}
-                        className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted hover:text-red-500 transition-colors"
+                        className="p-2 md:p-2.5 rounded-lg hover:bg-red-500/10 text-muted hover:text-red-500 transition-colors"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <X className="w-4 h-4 md:w-5 md:h-5" />
                       </motion.button>
                     </div>
                   </motion.div>

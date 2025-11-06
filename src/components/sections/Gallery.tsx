@@ -16,22 +16,48 @@ export default function Gallery() {
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
 
   return (
-    <motion.section className="container-xl mt-20" id="plans" initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ amount: 0.2, once: true }}>
-      <h2 className="text-2xl md:text-3xl mb-6 font-medium">Визуализации</h2>
-      <div className="grid gap-4 md:grid-cols-3 auto-rows-[200px]">
+    <motion.section 
+      className="container-xl mt-20 md:mt-28" 
+      id="plans" 
+      initial={{ opacity: 0 }} 
+      whileInView={{ opacity: 1 }} 
+      viewport={{ amount: 0.2, once: true }}
+    >
+      <motion.h2 
+        className="text-3xl md:text-4xl mb-8 md:mb-12 font-bold"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.6 }}
+      >
+        <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'var(--gradient-brand)' }}>
+          Визуализации
+        </span>
+      </motion.h2>
+      <div className="grid gap-4 md:gap-6 md:grid-cols-3 auto-rows-[200px] md:auto-rows-[240px]">
         {images.map((img, i) => (
           <motion.div
             key={i}
-            initial={{ opacity: 0, y: 50, scale: 0.98 }}
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
             whileInView={{ opacity: 1, y: 0, scale: 1 }}
-            viewport={{ amount: 0.4, once: true }}
-            transition={{ duration: 0.65, ease: [0.22,0.61,0.36,1], delay: i * 0.09 }}
-            whileHover={{ scale: 1.02, y: -4 }}
-            className={`relative overflow-hidden rounded-2xl bg-surface ring-1 ring-border cursor-pointer group ${i===0?"md:row-span-2":""}`}
+            viewport={{ amount: 0.3, once: true }}
+            transition={{ duration: 0.7, ease: [0.22,0.61,0.36,1], delay: i * 0.1 }}
+            whileHover={{ scale: 1.03, y: -6 }}
+            whileTap={{ scale: 0.98 }}
+            className={`relative overflow-hidden rounded-2xl md:rounded-3xl bg-surface ring-1 ring-border/60 hover:ring-border cursor-pointer group shadow-lg hover:shadow-2xl transition-all duration-500 ${i===0?"md:row-span-2":""}`}
             onClick={() => setSelectedImage(i)}
           >
-            <Image src={img.src} alt={img.alt} fill className="object-cover transition-transform duration-700 group-hover:scale-110" sizes="(min-width: 768px) 33vw, 100vw" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <Image 
+              src={img.src} 
+              alt={img.alt} 
+              fill 
+              className="object-cover transition-transform duration-700 group-hover:scale-110" 
+              sizes="(min-width: 768px) 33vw, 100vw" 
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 transform translate-y-full group-hover:translate-y-0 transition-transform duration-500">
+              <p className="text-white font-semibold text-sm md:text-base">{img.alt}</p>
+            </div>
           </motion.div>
         ))}
       </div>
