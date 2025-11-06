@@ -40,16 +40,10 @@ function generateUnits(kind: BuildingKind) {
 
 function NeonGlow({ size = [0.98, 0.58, 0.22], color = "#C47C57" as string }) {
   return (
-    <group>
-      <mesh>
-        <boxGeometry args={size as any} />
-        <meshBasicMaterial color={color} transparent opacity={0.5} blending={2} />
-      </mesh>
-      <mesh>
-        <boxGeometry args={[size[0] * 1.1, size[1] * 1.1, size[2] * 1.1] as any} />
-        <meshBasicMaterial color={color} transparent opacity={0.15} blending={2} />
-      </mesh>
-    </group>
+    <mesh>
+      <boxGeometry args={size as any} />
+      <meshBasicMaterial color={color} transparent opacity={0.42} blending={2} />
+    </mesh>
   );
 }
 
@@ -75,7 +69,7 @@ function ApartmentBox({
   return (
     <group position={position} ref={ref}>
       {hovered && !dimmed && <NeonGlow color={getBrand(kind)} />}
-      {/* Main apartment box with enhanced materials */}
+      {/* Main apartment unit */}
       <mesh
         onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); setHovered(true); onHover(unit, ref.current?.getWorldPosition(new Vector3())); }}
         onPointerOut={() => { setHovered(false); onHover(null); }}
@@ -86,20 +80,20 @@ function ApartmentBox({
         <boxGeometry args={[0.9, 0.5, 0.2]} />
         <meshStandardMaterial 
           color={color} 
-          metalness={hovered ? 0.3 : 0.15} 
-          roughness={hovered ? 0.4 : 0.6} 
+          metalness={hovered ? 0.25 : 0.1} 
+          roughness={hovered ? 0.45 : 0.55} 
           transparent 
           opacity={opacity}
           emissive={hovered ? color : "#000000"}
-          emissiveIntensity={hovered ? 0.2 : 0}
+          emissiveIntensity={hovered ? 0.15 : 0}
         />
       </mesh>
-      {/* Balcony/ledge detail */}
+      {/* Balcony ledge */}
       <mesh position={[0, -0.22, 0.12]} castShadow receiveShadow>
         <boxGeometry args={[0.95, 0.08, 0.18]} />
         <meshStandardMaterial color="#dcdfe4" roughness={0.7} metalness={0.1} />
       </mesh>
-      {/* Window frames - premium detail */}
+      {/* Large windows with frames */}
       {!dimmed && (
         <>
           <mesh position={[-0.25, 0.1, 0.21]} castShadow>
@@ -109,6 +103,15 @@ function ApartmentBox({
           <mesh position={[0.25, 0.1, 0.21]} castShadow>
             <boxGeometry args={[0.15, 0.2, 0.02]} />
             <meshStandardMaterial color="#2a2d35" metalness={0.8} roughness={0.2} />
+          </mesh>
+          {/* Glass panes */}
+          <mesh position={[-0.25, 0.1, 0.22]}>
+            <boxGeometry args={[0.13, 0.18, 0.01]} />
+            <meshStandardMaterial color="#87CEEB" transparent opacity={0.3} metalness={0.9} roughness={0.1} />
+          </mesh>
+          <mesh position={[0.25, 0.1, 0.22]}>
+            <boxGeometry args={[0.13, 0.18, 0.01]} />
+            <meshStandardMaterial color="#87CEEB" transparent opacity={0.3} metalness={0.9} roughness={0.1} />
           </mesh>
         </>
       )}
@@ -124,14 +127,15 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
 
   return (
     <group position={[offsetX, 0, 0]}>
-      {/* subtle active highlight */}
+      {/* Subtle active highlight */}
       {isActive && (
         <mesh position={[0, 0, -0.05]} rotation={[0,0,0]}>
           <planeGeometry args={[width+0.4, height+0.4]} />
           <meshBasicMaterial color={kind === "a" ? "#C47C57" : "#87919C"} transparent opacity={0.08} />
         </mesh>
       )}
-      {/* Main building facade with premium materials */}
+      
+      {/* Main building facade - premium material */}
       <mesh position={[0, height/2 - 0.35, 0]} castShadow receiveShadow>
         <boxGeometry args={[width, height, 0.4]} />
         <meshStandardMaterial 
@@ -142,6 +146,7 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
           emissiveIntensity={isActive ? 0.05 : 0}
         />
       </mesh>
+      
       {/* Building edges/trim - premium detail */}
       <mesh position={[-width/2, height/2 - 0.35, 0.21]} castShadow>
         <boxGeometry args={[0.02, height, 0.02]} />
@@ -156,19 +161,51 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
         <boxGeometry args={[width, 0.02, 0.02]} />
         <meshStandardMaterial color="#b8bcc4" metalness={0.3} roughness={0.4} />
       </mesh>
+      
+      {/* Vertical grid lines */}
       {Array.from({ length: UNITS_PER_FLOOR * 2 + 1 }).map((_, i) => (
-        <mesh key={`v-${i}`} position={[(-width/2) + i*(width/(UNITS_PER_FLOOR*2)), 0, 0.205]}>
+        <mesh key={`v-${i}`} position={[(-width/2) + i*(width/(UNITS_PER_FLOOR*2)), 0, 0.205]} castShadow>
           <boxGeometry args={[0.01, height, 0.01]} />
-          <meshStandardMaterial color="#c3c9cf" roughness={0.85} />
+          <meshStandardMaterial color="#c3c9cf" roughness={0.85} metalness={0.1} />
         </mesh>
       ))}
+      
+      {/* Horizontal floor dividers - enhanced for all 6 floors */}
       {Array.from({ length: FLOORS * 2 + 1 }).map((_, j) => (
-        <mesh key={`h-${j}`} position={[0, (-height/2) + j*(height/(FLOORS*2)), 0.205]}>
+        <mesh key={`h-${j}`} position={[0, (-height/2) + j*(height/(FLOORS*2)), 0.205]} castShadow>
           <boxGeometry args={[width, 0.01, 0.01]} />
-          <meshStandardMaterial color="#d0d5db" roughness={0.85} />
+          <meshStandardMaterial color="#d0d5db" roughness={0.85} metalness={0.1} />
         </mesh>
       ))}
+      
+      {/* Terraces/Balconies for each floor - premium detail */}
+      {Array.from({ length: FLOORS }).map((_, floorIdx) => {
+        const floorNum = floorIdx + 1;
+        const floorY = (-height/2) + 0.55 + floorIdx * 0.7;
+        return (
+          <group key={`terrace-${floorNum}`}>
+            {/* Terrace floor */}
+            <mesh position={[0, floorY - 0.3, 0.25]} castShadow receiveShadow>
+              <boxGeometry args={[width - 0.2, 0.05, 0.15]} />
+              <meshStandardMaterial color="#e8e8e8" roughness={0.6} metalness={0.05} />
+            </mesh>
+            {/* Glass railings on terraces */}
+            <mesh position={[0, floorY - 0.25, 0.32]} castShadow>
+              <boxGeometry args={[width - 0.2, 0.08, 0.01]} />
+              <meshStandardMaterial color="#87CEEB" transparent opacity={0.4} metalness={0.9} roughness={0.1} />
+            </mesh>
+            {/* Railing posts */}
+            {Array.from({ length: UNITS_PER_FLOOR + 1 }).map((_, i) => (
+              <mesh key={`post-${floorNum}-${i}`} position={[(-width/2) + 0.1 + i * (width - 0.2) / UNITS_PER_FLOOR, floorY - 0.25, 0.32]} castShadow>
+                <boxGeometry args={[0.015, 0.08, 0.015]} />
+                <meshStandardMaterial color="#2a2d35" metalness={0.8} roughness={0.2} />
+              </mesh>
+            ))}
+          </group>
+        );
+      })}
 
+      {/* Apartment units */}
       {units.map((u) => {
         const x = (-width/2) + 0.8 + (u.col-1) * 1.1;
         const y = (-height/2) + 0.55 + (u.floor-1) * 0.7;
@@ -341,7 +378,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         {/* Smooth camera focus on active building */}
         <CameraLerp targetXRef={targetXRef} />
         <color attach="background" args={[0,0,0]} />
-        {/* Enhanced lighting setup */}
+        {/* Enhanced lighting setup for premium look */}
         <ambientLight intensity={0.5} />
         <directionalLight 
           position={[6, 8, 6]} 

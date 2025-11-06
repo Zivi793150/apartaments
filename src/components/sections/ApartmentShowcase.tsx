@@ -49,15 +49,13 @@ export default function ApartmentShowcase() {
         {/* Блок 2: Флип карточки с маской-раскрытием */}
         <div className="mt-10 md:mt-24 grid md:grid-cols-2 gap-6 md:gap-10 items-center">
           <motion.div
-            initial={{ clipPath: "inset(0 0 100% 0)", opacity: 0, scale: 0.95 }}
-            whileInView={{ clipPath: "inset(0 0 0% 0)", opacity: 1, scale: 1 }}
-            whileHover={{ scale: 1.05 }}
+            initial={{ clipPath: "inset(0 0 100% 0)", opacity: 0 }}
+            whileInView={{ clipPath: "inset(0 0 0% 0)", opacity: 1 }}
             transition={{ duration: 0.8, ease: [0.2, 0.8, 0.2, 1] }}
             viewport={{ once: true, margin: "-80px" }}
-            className="relative rounded-3xl overflow-hidden ring-1 ring-border/80 min-h-[240px] shadow-xl hover:shadow-2xl"
+            className="relative rounded-3xl overflow-hidden ring-1 ring-border min-h-[240px]"
           >
-            <Image src="/images/arch-1.jpg" alt="Балконы" fill className="object-cover transition-transform duration-700 hover:scale-110" sizes="(max-width:768px) 100vw, 50vw" />
-            <div className="absolute inset-0 bg-gradient-to-t from-foreground/20 via-transparent to-transparent" />
+            <Image src="/images/arch-1.jpg" alt="Балконы" fill className="object-cover" sizes="(max-width:768px) 100vw, 50vw" />
           </motion.div>
           <motion.div
             initial={{ rotateY: 12, opacity: 0.0, translateZ: 0 }}
@@ -90,11 +88,10 @@ export default function ApartmentShowcase() {
               key={i}
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
-              whileHover={{ y: -6, scale: 1.03, rotateY: 2 }}
+              whileHover={{ y: -4, scale: 1.02 }}
               transition={{ duration: 0.6, delay: i * 0.12, type: "spring", stiffness: 300 }}
               viewport={{ once: true, margin: "-80px" }}
-              className="rounded-3xl bg-gradient-to-br from-surface to-white ring-1 ring-border/80 overflow-hidden card-hover shadow-lg hover:shadow-2xl"
-              style={{ transformStyle: "preserve-3d" }}
+              className="rounded-3xl bg-white ring-1 ring-border overflow-hidden card-hover"
             >
               <div className="grid grid-cols-5">
                 <div className="col-span-3 p-6 pr-4">
