@@ -109,7 +109,11 @@ export default function EstateBrowser3D() {
           <motion.button 
             onClick={() => set({ onlyAvailable: !filter.onlyAvailable })} 
             initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
+            animate={{ 
+              opacity: 1, 
+              x: 0,
+              scale: filter.onlyAvailable ? 1.02 : 1,
+            }}
             transition={{ delay: 0.3, type: "spring", stiffness: 300, damping: 20 }}
             whileTap={{ scale: 0.92 }}
             whileHover={{ scale: 1.02 }}
@@ -118,9 +122,6 @@ export default function EstateBrowser3D() {
                 ? "bg-gradient-brand text-white ring-brand shadow-lg"
                 : "ring-border/60 bg-background/85 backdrop-blur-md hover:bg-surface/50"
             }`}
-            animate={{
-              scale: filter.onlyAvailable ? 1.02 : 1,
-            }}
           >
             Свободные
           </motion.button>
@@ -151,7 +152,11 @@ export default function EstateBrowser3D() {
                   key={r} 
                   onClick={() => set({ rooms: filter.rooms===r? null : r as any })} 
                   initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  animate={{ 
+                    opacity: 1, 
+                    y: 0,
+                    scale: filter.rooms === r ? 1.05 : 1,
+                  }}
                   transition={{ delay: 0.2 + idx * 0.05, type: "spring", stiffness: 300, damping: 20 }}
                   whileTap={{ scale: 0.92 }}
                   whileHover={{ y: -2 }}
@@ -160,9 +165,6 @@ export default function EstateBrowser3D() {
                       ? "bg-gradient-brand text-white shadow-md"
                       : "text-muted hover:text-foreground hover:bg-surface/50"
                   }`}
-                  animate={{
-                    scale: filter.rooms === r ? 1.05 : 1,
-                  }}
                 >
                   {r}к
                 </motion.button>
@@ -173,7 +175,11 @@ export default function EstateBrowser3D() {
                   key={f} 
                   onClick={() => set({ hoverFloor: filter.hoverFloor===f ? null : f })} 
                   initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  animate={{ 
+                    opacity: 1, 
+                    y: 0,
+                    scale: filter.hoverFloor === f ? 1.05 : 1,
+                  }}
                   transition={{ delay: 0.4 + idx * 0.03, type: "spring", stiffness: 300, damping: 20 }}
                   whileTap={{ scale: 0.92 }}
                   whileHover={{ y: -2 }}
@@ -182,9 +188,6 @@ export default function EstateBrowser3D() {
                       ? "bg-gradient-brand text-white shadow-md"
                       : "text-muted hover:text-foreground hover:bg-surface/50"
                   }`}
-                  animate={{
-                    scale: filter.hoverFloor === f ? 1.05 : 1,
-                  }}
                 >
                   {f}
                 </motion.button>
