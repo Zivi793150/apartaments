@@ -50,48 +50,77 @@ export default function EstateBrowser3D() {
           className="absolute z-10 left-0 right-0 top-3 flex items-center justify-center gap-3 flex-wrap"
         >
           <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-1 shadow-lg">
-            {buildingTabs.map(({ k, t }) => (
+            {buildingTabs.map(({ k, t }, idx) => (
               <motion.div
                 key={k}
                 className="relative"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: idx * 0.1, type: "spring", stiffness: 300, damping: 20 }}
                 whileHover="hover"
-                initial="rest"
               >
                 <motion.button
                   onClick={() => set({ activeBuilding: k as any })}
                   aria-pressed={filter.activeBuilding===k}
-                  whileTap={{ scale: 0.95 }}
-                  className={`px-4 py-1.5 sm:px-5 sm:py-2 text-sm rounded-full transition-all duration-200 font-semibold relative ${
+                  whileTap={{ scale: 0.92 }}
+                  className={`px-4 py-1.5 sm:px-5 sm:py-2 text-sm rounded-full transition-all duration-300 font-semibold relative ${
                     filter.activeBuilding===k
                       ? "bg-gradient-brand text-white shadow-md"
                       : "text-muted hover:text-foreground hover:bg-surface/50"
                   }`}
+                  animate={{
+                    scale: filter.activeBuilding === k ? 1.02 : 1,
+                  }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 >
                   {t}
                 </motion.button>
-                {/* Parking tooltip */}
+                {/* Parking tooltip with smooth animation */}
                 <motion.div
                   variants={{
-                    hover: { opacity: 1, y: 0, pointerEvents: "auto" },
-                    rest: { opacity: 0, y: -5, pointerEvents: "none" }
+                    hover: { 
+                      opacity: 1, 
+                      y: 0, 
+                      scale: 1,
+                      pointerEvents: "auto",
+                      transition: { type: "spring", stiffness: 400, damping: 25 }
+                    },
+                    rest: { 
+                      opacity: 0, 
+                      y: -8, 
+                      scale: 0.9,
+                      pointerEvents: "none",
+                      transition: { duration: 0.15 }
+                    }
                   }}
-                  transition={{ duration: 0.2 }}
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-bold whitespace-nowrap shadow-lg z-50"
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-bold whitespace-nowrap shadow-xl z-50"
                 >
                   {k === "a" ? "✓ С паркингом" : "Без паркинга"}
-                  <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-foreground rotate-45" />
+                  <motion.div 
+                    className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-foreground rotate-45"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.1 }}
+                  />
                 </motion.div>
               </motion.div>
             ))}
           </div>
           <motion.button 
             onClick={() => set({ onlyAvailable: !filter.onlyAvailable })} 
-            whileTap={{ scale: 0.95 }}
-            className={`px-4 py-1.5 sm:px-5 sm:py-2 rounded-full text-sm ring-1 shadow-md transition-all duration-200 font-semibold ${
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3, type: "spring", stiffness: 300, damping: 20 }}
+            whileTap={{ scale: 0.92 }}
+            whileHover={{ scale: 1.02 }}
+            className={`px-4 py-1.5 sm:px-5 sm:py-2 rounded-full text-sm ring-1 shadow-md transition-all duration-300 font-semibold ${
               filter.onlyAvailable
                 ? "bg-gradient-brand text-white ring-brand shadow-lg"
                 : "ring-border/60 bg-background/85 backdrop-blur-md hover:bg-surface/50"
             }`}
+            animate={{
+              scale: filter.onlyAvailable ? 1.02 : 1,
+            }}
           >
             Свободные
           </motion.button>
@@ -107,40 +136,55 @@ export default function EstateBrowser3D() {
           }}
         />
 
-        {/* Bottom controls - Mobile adapted */}
+        {/* Bottom controls - Desktop original, mobile adapted */}
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           className="absolute z-10 left-0 right-0 bottom-2 flex items-center justify-center px-2 sm:px-0"
         >
-          <div className="w-full max-w-[calc(100vw-16px)] sm:max-w-none overflow-x-auto scrollbar-hide">
+          {/* Mobile: scrollable wrapper */}
+          <div className="w-full max-w-[calc(100vw-16px)] sm:max-w-none overflow-x-auto scrollbar-hide sm:overflow-visible">
             <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-1 shadow-lg mx-auto">
-              {[1,2,3,4].map(r => (
+              {[1,2,3,4].map((r, idx) => (
                 <motion.button 
                   key={r} 
                   onClick={() => set({ rooms: filter.rooms===r? null : r as any })} 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 + idx * 0.05, type: "spring", stiffness: 300, damping: 20 }}
                   whileTap={{ scale: 0.92 }}
-                  className={`px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-200 font-semibold whitespace-nowrap ${
+                  whileHover={{ y: -2 }}
+                  className={`px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-300 font-semibold whitespace-nowrap ${
                     filter.rooms===r
                       ? "bg-gradient-brand text-white shadow-md"
                       : "text-muted hover:text-foreground hover:bg-surface/50"
                   }`}
+                  animate={{
+                    scale: filter.rooms === r ? 1.05 : 1,
+                  }}
                 >
                   {r}к
                 </motion.button>
               ))}
               <span className="mx-1 sm:mx-1.5 w-px h-4 sm:h-5 bg-border/60" />
-              {[1,2,3,4,5,6].map(f => (
+              {[1,2,3,4,5,6].map((f, idx) => (
                 <motion.button 
                   key={f} 
                   onClick={() => set({ hoverFloor: filter.hoverFloor===f ? null : f })} 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 + idx * 0.03, type: "spring", stiffness: 300, damping: 20 }}
                   whileTap={{ scale: 0.92 }}
-                  className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-200 font-semibold whitespace-nowrap ${
+                  whileHover={{ y: -2 }}
+                  className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-300 font-semibold whitespace-nowrap ${
                     filter.hoverFloor===f
                       ? "bg-gradient-brand text-white shadow-md"
                       : "text-muted hover:text-foreground hover:bg-surface/50"
                   }`}
+                  animate={{
+                    scale: filter.hoverFloor === f ? 1.05 : 1,
+                  }}
                 >
                   {f}
                 </motion.button>
@@ -156,10 +200,15 @@ export default function EstateBrowser3D() {
           <motion.div
             ref={previewRef}
             key={picked.id}
-            initial={{ opacity: 0, y: 28, clipPath: "inset(0 0 100% 0)" }}
-            animate={{ opacity: 1, y: 0, clipPath: "inset(0 0 0% 0)" }}
-            exit={{ opacity: 0, y: 28, clipPath: "inset(0 0 100% 0)" }}
-            transition={{ type: "spring", stiffness: 380, damping: 40 }}
+            initial={{ opacity: 0, y: 40, scale: 0.95, clipPath: "inset(0 0 100% 0)" }}
+            animate={{ opacity: 1, y: 0, scale: 1, clipPath: "inset(0 0 0% 0)" }}
+            exit={{ opacity: 0, y: 40, scale: 0.95, clipPath: "inset(0 0 100% 0)" }}
+            transition={{ 
+              type: "spring", 
+              stiffness: 400, 
+              damping: 30,
+              mass: 0.8
+            }}
             className="mx-auto mt-3 max-w-[980px] md:max-w-[1100px]"
           >
             <div className="rounded-2xl bg-white/95 dark:bg-background/90 backdrop-blur-md ring-1 ring-border shadow-2xl p-4 md:p-6">
