@@ -407,12 +407,14 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           enablePan={false}
           enableZoom={false}
           zoomSpeed={0}
-          enableRotate={true} // Allow rotation on all devices
-          enableDamping
-          dampingFactor={0.08}
+          enableRotate={true}
+          enableDamping={true}
+          dampingFactor={0.05}
           maxPolarAngle={Math.PI/2.2}
-          minDistance={isMobile ? 8 : 5}
-          maxDistance={isMobile ? 12 : 14}
+          minPolarAngle={Math.PI/3}
+          minDistance={isMobile ? 9.5 : 7.5}
+          maxDistance={isMobile ? 10.5 : 8.5}
+          autoRotate={false}
         />
       </Canvas>
 
@@ -437,14 +439,30 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 function CameraLerp({ targetXRef }: { targetXRef: React.MutableRefObject<number> }) {
   const { camera } = useThree();
   const controls = (CameraLerp as any).controlsRef as any | undefined;
+  const targetDistance = React.useRef<number>(8); // Fixed target distance
+  
   useFrame(() => {
+    if (!controls || !controls.target) return;
+    
+    // Smooth lerp camera X position
     const dx = targetXRef.current - camera.position.x;
-    camera.position.x += dx * 0.08; // Smooth lerp
-    if (controls && controls.target) {
-      const dtx = targetXRef.current - controls.target.x;
-      controls.target.x += dtx * 0.1;
-      controls.update();
+    camera.position.x += dx * 0.08;
+    
+    // Smooth lerp target X position
+    const dtx = targetXRef.current - controls.target.x;
+    controls.target.x += dtx * 0.1;
+    
+    // Maintain fixed distance from target to prevent zoom
+    const currentDistance = camera.position.distanceTo(controls.target);
+    if (Math.abs(currentDistance - targetDistance.current) > 0.1) {
+      const direction = new Vector3()
+        .subVectors(camera.position, controls.target)
+        .normalize();
+      const correctedPos = direction.multiplyScalar(targetDistance.current).add(controls.target);
+      camera.position.lerp(correctedPos, 0.2);
     }
+    
+    controls.update();
   });
   return null;
 }
