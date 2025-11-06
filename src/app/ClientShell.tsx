@@ -1,5 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
+import { useState, useEffect } from "react";
 import SmoothScroll from "@/components/ux/SmoothScroll";
 import RippleGrid from "@/components/ux/RippleGrid";
 
@@ -19,9 +20,41 @@ const Footer = dynamic(() => import("@/components/layout/Footer"), {
 });
 
 export default function ClientShell({ children }: { children: React.ReactNode }) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
   return (
     <>
-      <RippleGrid gridColor="#D7C6BB" opacity={0.35} rippleIntensity={0.035} gridSize={14} gridThickness={10} fadeDistance={2.3} vignetteStrength={2.1} mouseInteraction={true} mouseInteractionRadius={0.7} />
+      {/* На мобильных - простой статический фон, на ПК - менее интенсивный RippleGrid */}
+      {isMobile ? (
+        <div className="fixed inset-0 -z-10 pointer-events-none bg-gradient-to-br from-background via-surface/30 to-background" 
+          style={{
+            background: `
+              radial-gradient(60% 60% at 80% 10%, rgba(224, 112, 62, 0.03), transparent 65%),
+              radial-gradient(50% 50% at 10% 80%, rgba(245, 196, 173, 0.02), transparent 60%),
+              var(--background)
+            `
+          }}
+        />
+      ) : (
+        <RippleGrid 
+          gridColor="#D7C6BB" 
+          opacity={0.15} 
+          rippleIntensity={0.015} 
+          gridSize={14} 
+          gridThickness={8} 
+          fadeDistance={2.3} 
+          vignetteStrength={1.5} 
+          mouseInteraction={true} 
+          mouseInteractionRadius={0.5} 
+        />
+      )}
       <SmoothScroll />
       <Header />
       {children}

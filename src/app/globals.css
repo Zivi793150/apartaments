@@ -127,16 +127,28 @@ strong, b { font-weight: 700; }
 .bg-art {
   position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: 
-    radial-gradient(60% 60% at 80% 10%, rgba(196,124,87,0.12), transparent 65%),
-    radial-gradient(50% 50% at 10% 80%, rgba(228,196,176,0.08), transparent 60%),
-    radial-gradient(40% 40% at 50% 50%, rgba(244,232,226,0.06), transparent 70%),
-    radial-gradient(55% 55% at 20% 30%, rgba(232,229,224,0.05), transparent 65%);
-  animation: bgFloat 18s ease-in-out infinite alternate;
+    radial-gradient(60% 60% at 80% 10%, rgba(196,124,87,0.05), transparent 65%),
+    radial-gradient(50% 50% at 10% 80%, rgba(228,196,176,0.03), transparent 60%),
+    radial-gradient(40% 40% at 50% 50%, rgba(244,232,226,0.02), transparent 70%),
+    radial-gradient(55% 55% at 20% 30%, rgba(232,229,224,0.02), transparent 65%);
+  /* Анимация только на десктопе, на мобильных статичный фон */
+  animation: bgFloat 25s ease-in-out infinite alternate;
 }
+
+@media (max-width: 767px) {
+  .bg-art {
+    animation: none;
+    background: 
+      radial-gradient(60% 60% at 80% 10%, rgba(224, 112, 62, 0.02), transparent 65%),
+      radial-gradient(50% 50% at 10% 80%, rgba(245, 196, 173, 0.015), transparent 60%),
+      var(--background);
+  }
+}
+
 @keyframes bgFloat {
   0% { filter: hue-rotate(0deg) blur(0px); transform: translateY(0px) scale(1); }
-  50% { filter: hue-rotate(4deg) blur(0.3px); transform: translateY(-8px) scale(1.01); }
-  100% { filter: hue-rotate(8deg) blur(0.5px); transform: translateY(-12px) scale(1.02); }
+  50% { filter: hue-rotate(2deg) blur(0.2px); transform: translateY(-4px) scale(1.005); }
+  100% { filter: hue-rotate(4deg) blur(0.3px); transform: translateY(-6px) scale(1.01); }
 }
 
 /* Enhanced smooth transitions */
