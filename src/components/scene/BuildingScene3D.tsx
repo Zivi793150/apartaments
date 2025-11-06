@@ -40,10 +40,16 @@ function generateUnits(kind: BuildingKind) {
 
 function NeonGlow({ size = [0.98, 0.58, 0.22], color = "#C47C57" as string }) {
   return (
-    <mesh>
-      <boxGeometry args={size as any} />
-      <meshBasicMaterial color={color} transparent opacity={0.42} blending={2} />
-    </mesh>
+    <group>
+      <mesh>
+        <boxGeometry args={size as any} />
+        <meshBasicMaterial color={color} transparent opacity={0.5} blending={2} />
+      </mesh>
+      <mesh>
+        <boxGeometry args={[size[0] * 1.1, size[1] * 1.1, size[2] * 1.1] as any} />
+        <meshBasicMaterial color={color} transparent opacity={0.15} blending={2} />
+      </mesh>
+    </group>
   );
 }
 
@@ -69,18 +75,43 @@ function ApartmentBox({
   return (
     <group position={position} ref={ref}>
       {hovered && !dimmed && <NeonGlow color={getBrand(kind)} />}
+      {/* Main apartment box with enhanced materials */}
       <mesh
         onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); setHovered(true); onHover(unit, ref.current?.getWorldPosition(new Vector3())); }}
         onPointerOut={() => { setHovered(false); onHover(null); }}
         onClick={(e) => { e.stopPropagation(); if (!dimmed) onPick(unit, ref.current?.getWorldPosition(new Vector3())); }}
+        castShadow
+        receiveShadow
       >
         <boxGeometry args={[0.9, 0.5, 0.2]} />
-        <meshStandardMaterial color={color} metalness={0.1} roughness={0.55} transparent opacity={opacity} />
+        <meshStandardMaterial 
+          color={color} 
+          metalness={hovered ? 0.3 : 0.15} 
+          roughness={hovered ? 0.4 : 0.6} 
+          transparent 
+          opacity={opacity}
+          emissive={hovered ? color : "#000000"}
+          emissiveIntensity={hovered ? 0.2 : 0}
+        />
       </mesh>
-      <mesh position={[0, -0.22, 0.12]}>
+      {/* Balcony/ledge detail */}
+      <mesh position={[0, -0.22, 0.12]} castShadow receiveShadow>
         <boxGeometry args={[0.95, 0.08, 0.18]} />
-        <meshStandardMaterial color="#dcdfe4" roughness={0.85} />
+        <meshStandardMaterial color="#dcdfe4" roughness={0.7} metalness={0.1} />
       </mesh>
+      {/* Window frames - premium detail */}
+      {!dimmed && (
+        <>
+          <mesh position={[-0.25, 0.1, 0.21]} castShadow>
+            <boxGeometry args={[0.15, 0.2, 0.02]} />
+            <meshStandardMaterial color="#2a2d35" metalness={0.8} roughness={0.2} />
+          </mesh>
+          <mesh position={[0.25, 0.1, 0.21]} castShadow>
+            <boxGeometry args={[0.15, 0.2, 0.02]} />
+            <meshStandardMaterial color="#2a2d35" metalness={0.8} roughness={0.2} />
+          </mesh>
+        </>
+      )}
     </group>
   );
 }
@@ -100,9 +131,30 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
           <meshBasicMaterial color={kind === "a" ? "#C47C57" : "#87919C"} transparent opacity={0.08} />
         </mesh>
       )}
+      {/* Main building facade with premium materials */}
       <mesh position={[0, height/2 - 0.35, 0]} castShadow receiveShadow>
         <boxGeometry args={[width, height, 0.4]} />
-        <meshStandardMaterial color={kind === "a" ? "#F3F1EE" : "#EAECEF"} roughness={0.9} metalness={0.02} />
+        <meshStandardMaterial 
+          color={kind === "a" ? "#F3F1EE" : "#EAECEF"} 
+          roughness={0.7} 
+          metalness={0.05}
+          emissive={isActive ? (kind === "a" ? "#C47C57" : "#87919C") : "#000000"}
+          emissiveIntensity={isActive ? 0.05 : 0}
+        />
+      </mesh>
+      {/* Building edges/trim - premium detail */}
+      <mesh position={[-width/2, height/2 - 0.35, 0.21]} castShadow>
+        <boxGeometry args={[0.02, height, 0.02]} />
+        <meshStandardMaterial color="#b8bcc4" metalness={0.3} roughness={0.4} />
+      </mesh>
+      <mesh position={[width/2, height/2 - 0.35, 0.21]} castShadow>
+        <boxGeometry args={[0.02, height, 0.02]} />
+        <meshStandardMaterial color="#b8bcc4" metalness={0.3} roughness={0.4} />
+      </mesh>
+      {/* Top edge */}
+      <mesh position={[0, height - 0.35, 0.21]} castShadow>
+        <boxGeometry args={[width, 0.02, 0.02]} />
+        <meshStandardMaterial color="#b8bcc4" metalness={0.3} roughness={0.4} />
       </mesh>
       {Array.from({ length: UNITS_PER_FLOOR * 2 + 1 }).map((_, i) => (
         <mesh key={`v-${i}`} position={[(-width/2) + i*(width/(UNITS_PER_FLOOR*2)), 0, 0.205]}>
@@ -289,8 +341,23 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         {/* Smooth camera focus on active building */}
         <CameraLerp targetXRef={targetXRef} />
         <color attach="background" args={[0,0,0]} />
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[6, 6, 6]} intensity={1.0} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
+        {/* Enhanced lighting setup */}
+        <ambientLight intensity={0.5} />
+        <directionalLight 
+          position={[6, 8, 6]} 
+          intensity={1.2} 
+          castShadow 
+          shadow-mapSize-width={2048} 
+          shadow-mapSize-height={2048}
+          shadow-camera-left={-10}
+          shadow-camera-right={10}
+          shadow-camera-top={10}
+          shadow-camera-bottom={-10}
+        />
+        {/* Additional fill light for premium look */}
+        <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+        {/* Rim light for depth */}
+        <pointLight position={[0, 8, -8]} intensity={0.3} distance={20} />
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]} receiveShadow>
           <planeGeometry args={[40, 40]} />
           <meshStandardMaterial color="#ece7e2" roughness={0.95} />
@@ -303,7 +370,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           enablePan={false}
           enableZoom={false}
           zoomSpeed={0}
-          enableRotate={!isMobile} // Disable rotation on mobile
+          enableRotate={true} // Allow rotation on all devices
           enableDamping
           dampingFactor={0.08}
           maxPolarAngle={Math.PI/2.2}

@@ -50,11 +50,13 @@ export default function HomeClient() {
         ].map((item, i) => (
           <Reveal key={i} delay={i * 0.08}>
             <motion.div 
-              whileHover={{ y: -6, scale: 1.02 }}
-              className="rounded-2xl bg-surface/70 backdrop-blur-sm p-6 md:p-8 ring-1 ring-border/60 hover:ring-border transition-all duration-300 hover:shadow-xl"
+              whileHover={{ y: -8, scale: 1.03, rotateY: 2 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="rounded-2xl bg-gradient-to-br from-surface/90 to-white backdrop-blur-md p-6 md:p-8 ring-1 ring-border/80 hover:ring-brand/30 transition-all duration-300 hover:shadow-2xl"
+              style={{ transformStyle: "preserve-3d" }}
             >
-              <h3 className="text-lg font-medium mb-3 text-foreground">{item.title}</h3>
-              <p className="text-muted text-[15px] leading-relaxed">{item.desc}</p>
+              <h3 className="text-lg font-bold mb-3 text-foreground">{item.title}</h3>
+              <p className="text-muted text-[15px] leading-relaxed font-semibold">{item.desc}</p>
             </motion.div>
           </Reveal>
         ))}

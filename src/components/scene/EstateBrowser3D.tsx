@@ -155,7 +155,7 @@ export default function EstateBrowser3D() {
             }}
             className="mx-auto mt-3 max-w-[980px] md:max-w-[1100px]"
           >
-            <div className="rounded-2xl bg-white/95 dark:bg-background/90 backdrop-blur-md ring-1 ring-border shadow-2xl p-4 md:p-6">
+            <div className="rounded-2xl bg-gradient-to-br from-white/98 to-surface/95 dark:bg-gradient-to-br dark:from-background/95 dark:to-surface/90 backdrop-blur-xl ring-1 ring-border/80 shadow-2xl p-4 md:p-6 premium-glow">
               <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
                 <div className="flex items-center gap-3">
                   <motion.div 
