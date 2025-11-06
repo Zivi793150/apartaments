@@ -99,7 +99,7 @@ export default function ApartmentPage() {
             ].map((row) => (
               <div key={row.k} className="py-2.5 flex items-center justify-between gap-4">
                 <span className="text-muted whitespace-nowrap font-semibold">{row.k}</span>
-                <span className="text-foreground/90 break-words text-right font-bold">{row.v}</span>
+                <span className="text-foreground break-words text-right font-bold">{row.v}</span>
               </div>
             ))}
           </div>
@@ -109,7 +109,7 @@ export default function ApartmentPage() {
             transition={{ delay: 0.2 }}
             className="rounded-2xl bg-foreground text-background p-5 mt-2 shadow-lg"
           >
-            <div className="text-sm opacity-80 font-semibold">Стоимость</div>
+            <div className="text-sm text-background/90 dark:text-background/80 font-semibold">Стоимость</div>
             <div className="text-2xl md:text-3xl font-bold">43 462 130 ₽</div>
           </motion.div>
           <div className="flex gap-3 mt-1">

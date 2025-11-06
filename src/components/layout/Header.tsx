@@ -66,7 +66,7 @@ export default function Header() {
             transition={{ type: "spring", stiffness: 400, damping: 17 }}
           >
             <Link href="/" className="flex items-center gap-2">
-              <span className="text-[18px] md:text-[20px] font-display tracking-tight text-foreground/90 font-bold">
+              <span className="text-[18px] md:text-[20px] font-display tracking-tight text-foreground font-bold">
                 La <span className="text-brand font-bold">Srmonia</span> Costerra
               </span>
             </Link>

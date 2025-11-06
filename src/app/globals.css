@@ -53,9 +53,9 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0c0f13;
-    --foreground: #edf1f6;
+    --foreground: #f5f8fc; /* Более яркий и контрастный */
     --surface: #151a21;
-    --muted: #98a7b4;
+    --muted: #b8c5d1; /* Более яркий для лучшей читаемости */
     --brand: #FF8A55;
     --brand-light: #F0BBA1;
     --brand-dark: #D7764A;
@@ -75,9 +75,9 @@
 /* Manual theme override */
 :root[data-theme="dark"] {
   --background: #0d1014;
-  --foreground: #e8ebef;
+  --foreground: #f5f8fc; /* Более яркий и контрастный */
   --surface: #141920;
-  --muted: #94a2ae;
+  --muted: #b8c5d1; /* Более яркий для лучшей читаемости */
   --brand: #FF8A55;
   --brand-light: #F0BBA1;
   --brand-dark: #D7764A;
@@ -111,6 +111,31 @@ h2, h3 { font-weight: 600; }
 body { font-weight: 500; }
 p, span, div, a, button, label { font-weight: 500; }
 strong, b { font-weight: 700; }
+
+/* Улучшенная контрастность текста в темной теме */
+@media (prefers-color-scheme: dark) {
+  h1, h2, h3, p, span, div, a, button, label {
+    color: var(--foreground);
+  }
+  .text-muted {
+    color: var(--muted) !important;
+  }
+  .text-foreground {
+    color: var(--foreground) !important;
+  }
+}
+
+:root[data-theme="dark"] {
+  h1, h2, h3, p, span, div, a, button, label {
+    color: var(--foreground);
+  }
+  .text-muted {
+    color: var(--muted) !important;
+  }
+  .text-foreground {
+    color: var(--foreground) !important;
+  }
+}
 
 /***** utility *****/
 .container-xl { width: 100%; max-width: 1440px; margin-inline: auto; padding-inline: 24px; }
@@ -154,6 +179,32 @@ strong, b { font-weight: 700; }
 /* Enhanced smooth transitions */
 * {
   transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Улучшенные focus states для accessibility */
+*:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Улучшенная читаемость в темной теме */
+@media (prefers-color-scheme: dark) {
+  *:focus-visible {
+    outline-color: var(--brand);
+  }
+}
+
+:root[data-theme="dark"] {
+  *:focus-visible {
+    outline-color: var(--brand);
+  }
 }
 
 /* Scroll animations enhancement */
