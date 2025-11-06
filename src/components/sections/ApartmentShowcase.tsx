@@ -22,16 +22,24 @@ export default function ApartmentShowcase() {
             viewport={{ once: true, margin: "-80px" }}
             className="px-1"
           >
-            <motion.div style={{ y: titleY }} className="text-[clamp(28px,4.4vw,48px)] leading-tight font-display">
+            <motion.div 
+              style={{ y: titleY }} 
+              className="text-[clamp(28px,4.4vw,48px)] leading-tight font-display font-bold"
+            >
               Окна с низкими <br />
               подоконными зонами
             </motion.div>
-            <p className="mt-4 text-muted max-w-md">
+            <p className="mt-4 text-muted max-w-md font-semibold">
               Высокие оконные проёмы обеспечивают естественный свет в течение всего дня
               и создают ощущение пространства.
             </p>
           </motion.div>
-          <motion.div style={{ y, scale }} className="relative aspect-[4/3] md:aspect-[3/2]">
+          <motion.div 
+            style={{ y, scale }} 
+            className="relative aspect-[4/3] md:aspect-[3/2] card-hover"
+            whileHover={{ scale: 1.05 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          >
             <div className="absolute inset-0 rounded-[50%] overflow-hidden">
               <Image src="/images/arch-2.jpg" alt="Интерьер" fill className="object-cover" sizes="(max-width:768px) 100vw, 50vw" />
             </div>
@@ -56,10 +64,10 @@ export default function ApartmentShowcase() {
             viewport={{ once: true, margin: "-80px" }}
             className="[transform-style:preserve-3d]"
           >
-            <div className="text-[clamp(24px,4vw,40px)] font-display leading-tight">
+            <div className="text-[clamp(24px,4vw,40px)] font-display leading-tight font-bold">
               Тёплые лоджии и приватные террасы
             </div>
-            <p className="mt-3 text-muted max-w-[46ch]">
+            <p className="mt-3 text-muted max-w-[46ch] font-semibold">
               Пространства, в которых приятно проводить вечер: мягкий свет, вид на море и приватность.
             </p>
           </motion.div>
@@ -80,14 +88,15 @@ export default function ApartmentShowcase() {
               key={i}
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: i * 0.12 }}
+              whileHover={{ y: -4, scale: 1.02 }}
+              transition={{ duration: 0.6, delay: i * 0.12, type: "spring", stiffness: 300 }}
               viewport={{ once: true, margin: "-80px" }}
-              className="rounded-3xl bg-white ring-1 ring-border overflow-hidden"
+              className="rounded-3xl bg-white ring-1 ring-border overflow-hidden card-hover"
             >
               <div className="grid grid-cols-5">
                 <div className="col-span-3 p-6 pr-4">
-                  <div className="text-[clamp(18px,2.6vw,28px)] leading-snug font-display">{card.title}</div>
-                  <p className="mt-3 text-muted text-[15px] leading-relaxed">{card.text}</p>
+                  <div className="text-[clamp(18px,2.6vw,28px)] leading-snug font-display font-bold">{card.title}</div>
+                  <p className="mt-3 text-muted text-[15px] leading-relaxed font-semibold">{card.text}</p>
                 </div>
                 <div className="col-span-2 relative min-h-[180px] md:min-h-[220px]">
                   <Image src={card.img} alt={card.title} fill className="object-cover" sizes="(max-width:768px) 50vw, 30vw" />

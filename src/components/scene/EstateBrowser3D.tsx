@@ -147,18 +147,26 @@ export default function EstateBrowser3D() {
             <div className="rounded-2xl bg-white/95 dark:bg-background/90 backdrop-blur-md ring-1 ring-border shadow-2xl p-4 md:p-6">
               <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="text-lg md:text-xl font-medium text-foreground">{picked.id}</div>
+                  <motion.div 
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                    className="text-lg md:text-xl font-bold text-foreground"
+                  >
+                    {picked.id}
+                  </motion.div>
                   <Chips id={picked.id} />
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="text-sm text-muted hidden sm:block">{picked.area} м² · {picked.rooms}к</div>
+                  <div className="text-sm text-muted hidden sm:block font-semibold">{picked.area} м² · {picked.rooms}к</div>
                   <motion.button
                     onClick={() => handleFavoriteToggle(picked)}
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                    whileHover={{ scale: 1.15, rotate: 5 }}
+                    whileTap={{ scale: 0.85, rotate: -5 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
                     className={`p-2 rounded-lg transition-colors ${
                       isFavorite(picked.id)
-                        ? "bg-red-500/10 text-red-500"
+                        ? "bg-red-500/10 text-red-500 animate-pulse-glow"
                         : "bg-surface hover:bg-background text-muted hover:text-red-500 ring-1 ring-border"
                     }`}
                   >
@@ -166,8 +174,9 @@ export default function EstateBrowser3D() {
                   </motion.button>
                   <motion.button
                     onClick={() => setPicked(null)}
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
+                    whileHover={{ scale: 1.15, rotate: 90 }}
+                    whileTap={{ scale: 0.85 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
                     className="p-2 rounded-lg bg-surface hover:bg-background text-muted hover:text-foreground ring-1 ring-border transition-colors"
                   >
                     <X className="w-4 h-4" />
@@ -194,51 +203,68 @@ export default function EstateBrowser3D() {
                 </div>
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-surface p-3 ring-1 ring-border">
-                      <div className="text-xs text-muted mb-1">Площадь</div>
-                      <div className="text-lg font-medium">{picked.area} м²</div>
-                    </div>
-                    <div className="rounded-xl bg-surface p-3 ring-1 ring-border">
-                      <div className="text-xs text-muted mb-1">Комнат</div>
-                      <div className="text-lg font-medium">{picked.rooms}</div>
-                    </div>
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.1, type: "spring", stiffness: 300 }}
+                      className="rounded-xl bg-surface p-3 ring-1 ring-border card-hover"
+                    >
+                      <div className="text-xs text-muted mb-1 font-semibold">Площадь</div>
+                      <div className="text-lg font-bold">{picked.area} м²</div>
+                    </motion.div>
+                    <motion.div 
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: 0.15, type: "spring", stiffness: 300 }}
+                      className="rounded-xl bg-surface p-3 ring-1 ring-border card-hover"
+                    >
+                      <div className="text-xs text-muted mb-1 font-semibold">Комнат</div>
+                      <div className="text-lg font-bold">{picked.rooms}</div>
+                    </motion.div>
                   </div>
-                  <div className="rounded-xl bg-surface p-4 ring-1 ring-border">
-                    <div className="text-xs text-muted mb-2">Характеристики</div>
+                  <motion.div 
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
+                    className="rounded-xl bg-surface p-4 ring-1 ring-border card-hover"
+                  >
+                    <div className="text-xs text-muted mb-2 font-semibold">Характеристики</div>
                     <div className="space-y-1.5 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-muted">Корпус</span>
-                        <span className="font-medium">{picked.id.split("-")[0]}</span>
+                        <span className="text-muted font-semibold">Корпус</span>
+                        <span className="font-bold">{picked.id.split("-")[0]}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted">Этаж</span>
-                        <span className="font-medium">{picked.id.split("-")[1]}</span>
+                        <span className="text-muted font-semibold">Этаж</span>
+                        <span className="font-bold">{picked.id.split("-")[1]}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted">Статус</span>
-                        <span className="font-medium text-brand">Доступна</span>
+                        <span className="text-muted font-semibold">Статус</span>
+                        <span className="font-bold text-brand">Доступна</span>
                       </div>
                     </div>
-                  </div>
-              </div>
+                  </motion.div>
+                </div>
               </div>
 
               <div className="flex gap-2">
                 <Link href={`/apartment/${picked.id}`} className="flex-1">
                   <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-brand text-white px-5 py-2.5 text-sm shadow-lg hover:shadow-xl transition-all duration-300 btn-enhanced"
-                >
+                    whileHover={{ scale: 1.05, y: -2 }}
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-brand text-white px-5 py-2.5 text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 btn-enhanced"
+                  >
                     <ExternalLink className="w-4 h-4" />
-                  Открыть план
+                    Открыть план
                   </motion.button>
                 </Link>
                 <motion.button 
                   onClick={() => setShowQuickView(true)}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="px-5 py-2.5 rounded-full ring-1 ring-border bg-surface hover:bg-background text-sm transition-all duration-300"
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                  className="px-5 py-2.5 rounded-full ring-1 ring-border bg-surface hover:bg-background text-sm font-bold transition-all duration-300"
                 >
                   <Maximize2 className="w-4 h-4 inline mr-2" />
                   <span className="hidden sm:inline">Быстрый просмотр</span>

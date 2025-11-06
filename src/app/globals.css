@@ -100,14 +100,17 @@ body {
   font-size: clamp(16px, 1.05vw + 14px, 18px);
 }
 
-/* Typography */
+/* Typography - Bolder */
 @font-face { font-family: 'BMDOHYEON'; src: url('/fonts/BMDOHYEON_otf.otf') format('opentype'); font-display: swap; }
 @font-face { font-family: 'ArialBlackPrimer'; src: url('/fonts/ArialBlackPrimer.ttf') format('truetype'); font-display: swap; }
 .ff-elegant { font-family: var(--font-display), serif; }
 .ff-strong { font-family: 'ArialBlackPrimer','BMDOHYEON', system-ui, sans-serif; }
-h1, h2, h3 { font-family: var(--font-display), serif; letter-spacing: 0.02em; }
-h1 { font-weight: 500; }
-h2, h3 { font-weight: 500; }
+h1, h2, h3 { font-family: var(--font-display), serif; letter-spacing: 0.02em; font-weight: 600; }
+h1 { font-weight: 700; }
+h2, h3 { font-weight: 600; }
+body { font-weight: 500; }
+p, span, div, a, button, label { font-weight: 500; }
+strong, b { font-weight: 700; }
 
 /***** utility *****/
 .container-xl { width: 100%; max-width: 1440px; margin-inline: auto; padding-inline: 24px; }
@@ -153,6 +156,39 @@ h2, h3 { font-weight: 500; }
   }
 }
 
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 @keyframes scaleIn {
   from {
     opacity: 0;
@@ -164,11 +200,29 @@ h2, h3 { font-weight: 500; }
   }
 }
 
+@keyframes scaleInBounce {
+  0% { opacity: 0; transform: scale(0.3); }
+  50% { transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes rotateIn {
+  from {
+    opacity: 0;
+    transform: rotate(-10deg) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+  }
+}
+
 /* Enhanced button hover effects */
 .btn-enhanced {
   position: relative;
   overflow: hidden;
   transition: all 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+  font-weight: 600;
 }
 
 .btn-enhanced::before {
@@ -179,7 +233,7 @@ h2, h3 { font-weight: 500; }
   width: 0;
   height: 0;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
   transform: translate(-50%, -50%);
   transition: width 0.6s, height 0.6s;
 }
@@ -187,6 +241,69 @@ h2, h3 { font-weight: 500; }
 .btn-enhanced:hover::before {
   width: 300px;
   height: 300px;
+}
+
+.btn-enhanced:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(224, 112, 62, 0.3);
+}
+
+.btn-enhanced:active {
+  transform: translateY(0);
+}
+
+/* Card hover animations */
+.card-hover {
+  transition: all 0.4s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.card-hover:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* Pulse animation */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 112, 62, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(224, 112, 62, 0); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Float animation */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Shimmer effect */
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Bounce in animation */
+@keyframes bounceIn {
+  0% { transform: scale(0.3); opacity: 0; }
+  50% { transform: scale(1.05); }
+  70% { transform: scale(0.9); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 }
 
 /* Glass morphism effect */
