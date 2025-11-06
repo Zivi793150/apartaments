@@ -178,8 +178,8 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
     }
   }, [isMobile]);
 
-  // smooth focus to active building (A/B/All)
-  const targetXRef = React.useRef<number>(0);
+  // smooth focus to active building (A/B/All) - starts on A
+  const targetXRef = React.useRef<number>(-3.6); // Initialize on building A
   React.useEffect(() => {
     // центры зданий соответствуют offsetX для левого/правого корпусов
     if (filter.activeBuilding === "a") targetXRef.current = -3.6;
@@ -261,11 +261,12 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 
       <Canvas
         shadows
-        camera={{ position: isMobile ? [3.2, 5.2, 10.5] as any : [4.2, 5.2, 11.5] as any, fov: isMobile ? 42 : 36 }}
+        camera={{ position: isMobile ? [6.2, 5.2, 10.5] as any : [7.2, 5.2, 11.5] as any, fov: isMobile ? 42 : 36 }}
         dpr={[1, 2]}
         onPointerMissed={() => { setHovered(null); }}
       >
-        {/* camera centered on Building A initially */}
+        {/* Smooth camera focus on active building */}
+        <CameraLerp targetXRef={targetXRef} />
         <color attach="background" args={[0,0,0]} />
         <ambientLight intensity={0.6} />
         <directionalLight position={[6, 6, 6]} intensity={1.0} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
@@ -277,6 +278,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         <Building kind="b" withParking={false} offsetX={3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
         <ProjectorInside hovered={hovered} onProject={(pt)=>setScreenPos(pt)} />
         <OrbitControls
+          ref={(ctrl:any)=>{(CameraLerp as any).controlsRef=ctrl}}
           enablePan={false}
           enableZoom={false}
           zoomSpeed={0}
@@ -285,7 +287,6 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           maxPolarAngle={Math.PI/2.2}
           minDistance={5}
           maxDistance={14}
-          target={[-3.6, 0, 0]}
         />
       </Canvas>
 
@@ -305,4 +306,19 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
       )}
     </div>
   );
+}
+
+function CameraLerp({ targetXRef }: { targetXRef: React.MutableRefObject<number> }) {
+  const { camera } = useThree();
+  const controls = (CameraLerp as any).controlsRef as any | undefined;
+  useFrame(() => {
+    const dx = targetXRef.current - camera.position.x;
+    camera.position.x += dx * 0.08; // Smooth lerp
+    if (controls && controls.target) {
+      const dtx = targetXRef.current - controls.target.x;
+      controls.target.x += dtx * 0.1;
+      controls.update();
+    }
+  });
+  return null;
 }
