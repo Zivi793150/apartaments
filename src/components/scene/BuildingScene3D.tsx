@@ -261,11 +261,11 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 
       <Canvas
         shadows
-        camera={{ position: isMobile ? [6.2, 5.2, 10.5] as any : [7.2, 5.2, 11.5] as any, fov: isMobile ? 42 : 36 }}
+        camera={{ position: isMobile ? [3.2, 5.2, 10.5] as any : [4.2, 5.2, 11.5] as any, fov: isMobile ? 42 : 36 }}
         dpr={[1, 2]}
         onPointerMissed={() => { setHovered(null); }}
       >
-        {/* camera remains fixed; no auto-zoom/pan */}
+        {/* camera centered on Building A initially */}
         <color attach="background" args={[0,0,0]} />
         <ambientLight intensity={0.6} />
         <directionalLight position={[6, 6, 6]} intensity={1.0} castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
@@ -285,6 +285,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           maxPolarAngle={Math.PI/2.2}
           minDistance={5}
           maxDistance={14}
+          target={[-3.6, 0, 0]}
         />
       </Canvas>
 

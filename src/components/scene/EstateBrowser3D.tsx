@@ -43,13 +43,13 @@ export default function EstateBrowser3D() {
   return (
     <div>
       <div className="relative">
-        {/* Top controls above scene */}
+        {/* Top controls above scene - Mobile adapted */}
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="absolute z-10 left-0 right-0 top-3 flex items-center justify-center gap-3 flex-wrap"
+          className="absolute z-10 left-0 right-0 top-2 sm:top-3 flex items-center justify-center gap-2 sm:gap-3 flex-wrap px-2 sm:px-0"
         >
-          <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-1 shadow-lg">
+          <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-0.5 sm:p-1 shadow-lg">
             {buildingTabs.map(({ k, t }) => (
               <motion.button
                 key={k}
@@ -57,7 +57,7 @@ export default function EstateBrowser3D() {
                 aria-pressed={filter.activeBuilding===k}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className={`px-4 py-1.5 sm:px-5 sm:py-2 text-sm rounded-full transition-all duration-300 ${
+                className={`px-3 py-1.5 sm:px-4 sm:py-1.5 md:px-5 md:py-2 text-xs sm:text-sm rounded-full transition-all duration-300 font-semibold whitespace-nowrap ${
                   filter.activeBuilding===k
                     ? "bg-gradient-brand text-white shadow-md"
                     : "text-muted hover:text-foreground hover:bg-surface/50"
@@ -69,7 +69,7 @@ export default function EstateBrowser3D() {
             onClick={() => set({ onlyAvailable: !filter.onlyAvailable })} 
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className={`px-4 py-1.5 sm:px-5 sm:py-2 rounded-full text-sm ring-1 shadow-md transition-all duration-300 ${
+            className={`px-3 py-1.5 sm:px-4 sm:py-1.5 md:px-5 md:py-2 rounded-full text-xs sm:text-sm ring-1 shadow-md transition-all duration-300 font-semibold whitespace-nowrap ${
               filter.onlyAvailable
                 ? "bg-gradient-brand text-white ring-brand shadow-lg"
                 : "ring-border/60 bg-background/85 backdrop-blur-md hover:bg-surface/50"
@@ -89,45 +89,49 @@ export default function EstateBrowser3D() {
           }}
         />
 
-        {/* Bottom controls */}
+        {/* Bottom controls - Mobile adapted */}
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="absolute z-10 left-0 right-0 bottom-2 flex items-center justify-center"
+          className="absolute z-10 left-0 right-0 bottom-2 flex items-center justify-center px-2 sm:px-0"
         >
-          <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-1 shadow-lg">
-            {[1,2,3,4].map(r => (
-              <motion.button 
-                key={r} 
-                onClick={() => set({ rooms: filter.rooms===r? null : r as any })} 
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.92 }}
-                className={`px-4 py-2 text-sm rounded-full transition-all duration-300 ${
-                  filter.rooms===r
-                    ? "bg-gradient-brand text-white shadow-md"
-                    : "text-muted hover:text-foreground hover:bg-surface/50"
-                }`}
-              >
-                {r}к
-              </motion.button>
-            ))}
-            <span className="mx-1.5 w-px h-5 bg-border/60" />
-            {[1,2,3,4,5,6].map(f => (
-              <motion.button 
-                key={f} 
-                onClick={() => set({ hoverFloor: filter.hoverFloor===f ? null : f })} 
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.92 }}
-                className={`px-3.5 py-2 text-sm rounded-full transition-all duration-300 ${
-                  filter.hoverFloor===f
-                    ? "bg-gradient-brand text-white shadow-md"
-                    : "text-muted hover:text-foreground hover:bg-surface/50"
-                }`}
-              >
-                {f}
-              </motion.button>
-            ))}
+          <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-1 shadow-lg max-w-full overflow-x-auto scrollbar-hide">
+            <div className="flex items-center gap-1 sm:gap-0">
+              {[1,2,3,4].map(r => (
+                <motion.button 
+                  key={r} 
+                  onClick={() => set({ rooms: filter.rooms===r? null : r as any })} 
+                  whileHover={{ scale: 1.08 }}
+                  whileTap={{ scale: 0.92 }}
+                  className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-300 font-semibold whitespace-nowrap ${
+                    filter.rooms===r
+                      ? "bg-gradient-brand text-white shadow-md"
+                      : "text-muted hover:text-foreground hover:bg-surface/50"
+                  }`}
+                >
+                  {r}к
+                </motion.button>
+              ))}
+              <span className="mx-1 sm:mx-1.5 w-px h-4 sm:h-5 bg-border/60" />
+              <div className="flex items-center gap-1 sm:gap-0">
+                {[1,2,3,4,5,6].map(f => (
+                  <motion.button 
+                    key={f} 
+                    onClick={() => set({ hoverFloor: filter.hoverFloor===f ? null : f })} 
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.92 }}
+                    className={`px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-300 font-semibold whitespace-nowrap ${
+                      filter.hoverFloor===f
+                        ? "bg-gradient-brand text-white shadow-md"
+                        : "text-muted hover:text-foreground hover:bg-surface/50"
+                    }`}
+                  >
+                    {f}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
           </div>
         </motion.div>
       </div>
