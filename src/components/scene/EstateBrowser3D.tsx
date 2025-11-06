@@ -94,11 +94,14 @@ export default function EstateBrowser3D() {
                       transition: { duration: 0.15 }
                     }
                   }}
-                  className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-bold whitespace-nowrap shadow-xl z-50"
+                  className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1.5 rounded-lg bg-gradient-brand text-white text-xs font-bold whitespace-nowrap shadow-xl z-50"
                 >
                   {k === "a" ? "✓ С паркингом" : "Без паркинга"}
                   <motion.div 
-                    className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-foreground rotate-45"
+                    className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45"
+                    style={{ 
+                      background: 'linear-gradient(135deg, #FF8A55 0%, #E0703E 60%, #C25E32 100%)'
+                    }}
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ delay: 0.1 }}

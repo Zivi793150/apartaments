@@ -21,18 +21,10 @@ export default function ApartmentStickyCTA({ id }: { id: string }) {
             {id}
           </div>
           <motion.a
-            href={`/apartment/${id}`}
+            href="#master"
             whileHover={{ scale: 1.05, y: -2 }}
             whileTap={{ scale: 0.95 }}
             className="flex-1 inline-flex items-center justify-center rounded-full bg-gradient-brand text-white px-4 md:px-6 py-2.5 md:py-3 text-xs md:text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 btn-enhanced"
-          >
-            Открыть план
-          </motion.a>
-          <motion.a
-            href="#master"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="px-3 md:px-4 py-2 md:py-2.5 rounded-full ring-1 ring-border/60 text-xs md:text-sm font-semibold hidden md:inline-flex hover:bg-surface/80 transition-colors"
           >
             К фасаду
           </motion.a>
