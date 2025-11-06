@@ -430,10 +430,10 @@ function QuickViewModal({
                   </div>
                 </div>
               </div>
-              <div className="rounded-xl bg-foreground text-background p-5">
-                <div className="text-sm opacity-80 mb-1">Стоимость</div>
-                <div className="text-2xl font-medium">43 462 130 ₽</div>
-                <div className="text-xs opacity-60 line-through mt-1">47 232 750 ₽</div>
+              <div className="rounded-xl bg-gradient-brand text-white p-5">
+                <div className="text-sm opacity-90 mb-1 font-semibold">Стоимость</div>
+                <div className="text-2xl font-bold">43 462 130 ₽</div>
+                <div className="text-xs opacity-80 line-through mt-1">47 232 750 ₽</div>
               </div>
             </div>
           </div>

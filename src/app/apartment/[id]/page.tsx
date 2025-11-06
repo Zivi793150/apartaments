@@ -107,9 +107,9 @@ export default function ApartmentPage() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="rounded-2xl bg-foreground text-background p-5 mt-2 shadow-lg"
+            className="rounded-2xl bg-gradient-brand text-white p-5 mt-2 shadow-lg"
           >
-            <div className="text-sm opacity-80 font-semibold">Стоимость</div>
+            <div className="text-sm opacity-90 font-semibold">Стоимость</div>
             <div className="text-2xl md:text-3xl font-bold">43 462 130 ₽</div>
           </motion.div>
           <div className="flex gap-3 mt-1">
