@@ -43,13 +43,13 @@ export default function EstateBrowser3D() {
   return (
     <div>
       <div className="relative">
-        {/* Top controls above scene */}
+        {/* Top controls above scene - упрощенные на мобильных */}
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="absolute z-10 left-0 right-0 top-3 flex items-center justify-center gap-3 flex-wrap"
+          className="absolute z-10 left-0 right-0 top-2 md:top-3 flex items-center justify-center gap-2 md:gap-3 px-2"
         >
-          <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-1 shadow-lg">
+          <div className="inline-flex bg-background/90 backdrop-blur-md rounded-full ring-1 ring-border/60 p-0.5 md:p-1 shadow-lg">
             {buildingTabs.map(({ k, t }, idx) => (
               <motion.div
                 key={k}
@@ -63,7 +63,7 @@ export default function EstateBrowser3D() {
                   onClick={() => set({ activeBuilding: k as any })}
                   aria-pressed={filter.activeBuilding===k}
                   whileTap={{ scale: 0.92 }}
-                  className={`px-4 py-1.5 sm:px-5 sm:py-2 text-sm rounded-full transition-all duration-300 font-semibold relative ${
+                  className={`px-3 py-1 md:px-4 md:py-1.5 text-xs md:text-sm rounded-full transition-all duration-300 font-semibold relative ${
                     filter.activeBuilding===k
                       ? "bg-gradient-brand text-white shadow-md"
                       : "text-muted hover:text-foreground hover:bg-surface/50"
@@ -73,9 +73,10 @@ export default function EstateBrowser3D() {
                   }}
                   transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 >
-                  {t}
+                  <span className="hidden sm:inline">{t}</span>
+                  <span className="sm:hidden">{k.toUpperCase()}</span>
                 </motion.button>
-                {/* Parking tooltip with smooth animation */}
+                {/* Parking tooltip - только на десктопе */}
                 <motion.div
                   variants={{
                     hover: { 
@@ -93,7 +94,7 @@ export default function EstateBrowser3D() {
                       transition: { duration: 0.15 }
                     }
                   }}
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-bold whitespace-nowrap shadow-xl z-50"
+                  className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-bold whitespace-nowrap shadow-xl z-50"
                 >
                   {k === "a" ? "✓ С паркингом" : "Без паркинга"}
                   <motion.div 
@@ -103,6 +104,14 @@ export default function EstateBrowser3D() {
                     transition={{ delay: 0.1 }}
                   />
                 </motion.div>
+                {/* Badge на мобильных */}
+                {filter.activeBuilding === k && (
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="md:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-brand ring-2 ring-background"
+                  />
+                )}
               </motion.div>
             ))}
           </div>
@@ -117,13 +126,14 @@ export default function EstateBrowser3D() {
             transition={{ delay: 0.3, type: "spring", stiffness: 300, damping: 20 }}
             whileTap={{ scale: 0.92 }}
             whileHover={{ scale: 1.02 }}
-            className={`px-4 py-1.5 sm:px-5 sm:py-2 rounded-full text-sm ring-1 shadow-md transition-all duration-300 font-semibold ${
+            className={`px-3 py-1 md:px-4 md:py-1.5 rounded-full text-xs md:text-sm ring-1 shadow-md transition-all duration-300 font-semibold ${
               filter.onlyAvailable
                 ? "bg-gradient-brand text-white ring-brand shadow-lg"
-                : "ring-border/60 bg-background/85 backdrop-blur-md hover:bg-surface/50"
+                : "ring-border/60 bg-background/90 backdrop-blur-md hover:bg-surface/50 text-muted"
             }`}
           >
-            Свободные
+            <span className="hidden sm:inline">Свободные</span>
+            <span className="sm:hidden">✓</span>
           </motion.button>
         </motion.div>
 
@@ -155,48 +165,54 @@ export default function EstateBrowser3D() {
             }}
             className="mx-auto mt-3 max-w-[980px] md:max-w-[1100px]"
           >
-            <div className="rounded-2xl bg-white/95 dark:bg-background/90 backdrop-blur-md ring-1 ring-border shadow-2xl p-4 md:p-6">
-              <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-                <div className="flex items-center gap-3">
+            <div className="rounded-2xl bg-white/95 dark:bg-background/90 backdrop-blur-md ring-1 ring-border shadow-2xl p-3 md:p-6">
+              {/* Упрощенный заголовок на мобильных */}
+              <div className="flex items-center justify-between gap-2 mb-3 md:mb-4">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <motion.div 
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                    className="text-lg md:text-xl font-bold text-foreground"
+                    className="text-base md:text-xl font-bold text-foreground truncate"
                   >
                     {picked.id}
                   </motion.div>
-                  <Chips id={picked.id} />
+                  <div className="hidden md:block">
+                    <Chips id={picked.id} />
+                  </div>
+                  <div className="md:hidden text-xs text-muted font-semibold whitespace-nowrap">
+                    {picked.area} м² · {picked.rooms}к
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-sm text-muted hidden sm:block font-semibold">{picked.area} м² · {picked.rooms}к</div>
+                <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
                   <motion.button
                     onClick={() => handleFavoriteToggle(picked)}
                     whileHover={{ scale: 1.15, rotate: 5 }}
                     whileTap={{ scale: 0.85, rotate: -5 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                    className={`p-2 rounded-lg transition-colors ${
+                    className={`p-1.5 md:p-2 rounded-lg transition-colors ${
                       isFavorite(picked.id)
                         ? "bg-red-500/10 text-red-500 animate-pulse-glow"
                         : "bg-surface hover:bg-background text-muted hover:text-red-500 ring-1 ring-border"
                     }`}
                   >
-                    <Heart className={`w-4 h-4 ${isFavorite(picked.id) ? "fill-current" : ""}`} />
+                    <Heart className={`w-4 h-4 md:w-5 md:h-5 ${isFavorite(picked.id) ? "fill-current" : ""}`} />
                   </motion.button>
                   <motion.button
                     onClick={() => setPicked(null)}
                     whileHover={{ scale: 1.15, rotate: 90 }}
                     whileTap={{ scale: 0.85 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                    className="p-2 rounded-lg bg-surface hover:bg-background text-muted hover:text-foreground ring-1 ring-border transition-colors"
+                    className="p-1.5 md:p-2 rounded-lg bg-surface hover:bg-background text-muted hover:text-foreground ring-1 ring-border transition-colors"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-4 h-4 md:w-5 md:h-5" />
                   </motion.button>
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4 mb-4">
-                <div className="relative w-full h-48 md:h-56 rounded-xl overflow-hidden ring-1 ring-border group cursor-pointer"
+              <div className="grid md:grid-cols-2 gap-3 md:gap-4 mb-3 md:mb-4">
+                {/* План - на мобильных упрощенный */}
+                <div className="relative w-full h-40 md:h-56 rounded-xl overflow-hidden ring-1 ring-border group cursor-pointer"
                   onClick={() => setShowQuickView(true)}
                 >
                   <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-transparent to-transparent pointer-events-none z-10" />
@@ -205,39 +221,41 @@ export default function EstateBrowser3D() {
                     <motion.div
                       initial={{ scale: 0.8, opacity: 0 }}
                       whileHover={{ scale: 1 }}
-                      className="hidden group-hover:flex items-center gap-2 text-white bg-white/20 backdrop-blur rounded-full px-4 py-2 text-sm font-medium"
+                      className="hidden md:group-hover:flex items-center gap-2 text-white bg-white/20 backdrop-blur rounded-full px-4 py-2 text-sm font-medium"
                     >
                       <Maximize2 className="w-4 h-4" />
                       Быстрый просмотр
                     </motion.div>
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                {/* Характеристики - упрощенные на мобильных */}
+                <div className="space-y-2 md:space-y-3">
+                  <div className="grid grid-cols-2 gap-2 md:gap-3">
                     <motion.div 
                       initial={{ scale: 0.9, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ delay: 0.1, type: "spring", stiffness: 300 }}
-                      className="rounded-xl bg-surface p-3 ring-1 ring-border card-hover"
+                      className="rounded-lg md:rounded-xl bg-surface p-2.5 md:p-3 ring-1 ring-border card-hover"
                     >
-                      <div className="text-xs text-muted mb-1 font-semibold">Площадь</div>
-                      <div className="text-lg font-bold">{picked.area} м²</div>
+                      <div className="text-[10px] md:text-xs text-muted mb-0.5 md:mb-1 font-semibold">Площадь</div>
+                      <div className="text-base md:text-lg font-bold">{picked.area} м²</div>
                     </motion.div>
                     <motion.div 
                       initial={{ scale: 0.9, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ delay: 0.15, type: "spring", stiffness: 300 }}
-                      className="rounded-xl bg-surface p-3 ring-1 ring-border card-hover"
+                      className="rounded-lg md:rounded-xl bg-surface p-2.5 md:p-3 ring-1 ring-border card-hover"
                     >
-                      <div className="text-xs text-muted mb-1 font-semibold">Комнат</div>
-                      <div className="text-lg font-bold">{picked.rooms}</div>
+                      <div className="text-[10px] md:text-xs text-muted mb-0.5 md:mb-1 font-semibold">Комнат</div>
+                      <div className="text-base md:text-lg font-bold">{picked.rooms}</div>
                     </motion.div>
                   </div>
+                  {/* Характеристики - скрыты на мобильных */}
                   <motion.div 
                     initial={{ scale: 0.95, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
-                    className="rounded-xl bg-surface p-4 ring-1 ring-border card-hover"
+                    className="hidden md:block rounded-xl bg-surface p-4 ring-1 ring-border card-hover"
                   >
                     <div className="text-xs text-muted mb-2 font-semibold">Характеристики</div>
                     <div className="space-y-1.5 text-sm">
@@ -258,16 +276,17 @@ export default function EstateBrowser3D() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              {/* Кнопки - упрощенные на мобильных */}
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Link href={`/apartment/${picked.id}`} className="flex-1">
                   <motion.button
                     whileHover={{ scale: 1.05, y: -2 }}
                     whileTap={{ scale: 0.95 }}
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-brand text-white px-5 py-2.5 text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 btn-enhanced"
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-gradient-brand text-white px-4 md:px-5 py-2 md:py-2.5 text-xs md:text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 btn-enhanced"
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    Открыть план
+                    <ExternalLink className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                    <span>Открыть план</span>
                   </motion.button>
                 </Link>
                 <motion.button 
@@ -275,10 +294,10 @@ export default function EstateBrowser3D() {
                   whileHover={{ scale: 1.05, y: -2 }}
                   whileTap={{ scale: 0.95 }}
                   transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                  className="px-5 py-2.5 rounded-full ring-1 ring-border bg-surface hover:bg-background text-sm font-bold transition-all duration-300"
+                  className="hidden md:inline-flex items-center justify-center px-5 py-2.5 rounded-full ring-1 ring-border bg-surface hover:bg-background text-sm font-bold transition-all duration-300"
                 >
-                  <Maximize2 className="w-4 h-4 inline mr-2" />
-                  <span className="hidden sm:inline">Быстрый просмотр</span>
+                  <Maximize2 className="w-4 h-4 mr-2" />
+                  Быстрый просмотр
                 </motion.button>
               </div>
             </div>

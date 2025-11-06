@@ -21,8 +21,13 @@ function getUnitColor(kind: BuildingKind, available: boolean, hovered: boolean) 
   return getAccent(kind);
 }
 
-function getBrand(kind: BuildingKind) { return kind === "a" ? "#C47C57" : "#87919C"; }
-function getAccent(kind: BuildingKind) { return kind === "a" ? "#d7b3a0" : "#c8cdd4"; }
+// Используем цвета из палитры для лучшей согласованности
+function getBrand(kind: BuildingKind) { 
+  return kind === "a" ? "#E0703E" : "#6C7A88"; // brand и accent-satin из CSS
+}
+function getAccent(kind: BuildingKind) { 
+  return kind === "a" ? "#F5C4AD" : "#D4DBE3"; // brand-light и accent-satin из CSS
+}
 
 function generateUnits(kind: BuildingKind) {
   const units: Array<{ id: string; floor: number; col: number; area: number; rooms: number; available: boolean }> = [];
@@ -38,7 +43,7 @@ function generateUnits(kind: BuildingKind) {
   return units;
 }
 
-function NeonGlow({ size = [0.98, 0.58, 0.22], color = "#C47C57" as string }) {
+function NeonGlow({ size = [0.98, 0.58, 0.22], color = "#E0703E" as string }) {
   return (
     <mesh>
       <boxGeometry args={size as any} />
@@ -131,7 +136,7 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
       {isActive && (
         <mesh position={[0, 0, -0.05]} rotation={[0,0,0]}>
           <planeGeometry args={[width+0.4, height+0.4]} />
-          <meshBasicMaterial color={kind === "a" ? "#C47C57" : "#87919C"} transparent opacity={0.08} />
+          <meshBasicMaterial color={kind === "a" ? "#E0703E" : "#6C7A88"} transparent opacity={0.08} />
         </mesh>
       )}
       
@@ -142,7 +147,7 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
           color={kind === "a" ? "#F3F1EE" : "#EAECEF"} 
           roughness={0.7} 
           metalness={0.05}
-          emissive={isActive ? (kind === "a" ? "#C47C57" : "#87919C") : "#000000"}
+          emissive={isActive ? (kind === "a" ? "#E0703E" : "#6C7A88") : "#000000"}
           emissiveIntensity={isActive ? 0.05 : 0}
         />
       </mesh>
