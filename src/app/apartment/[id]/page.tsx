@@ -1,10 +1,8 @@
 "use client";
 import Image from "next/image";
-import Link from "next/link";
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ApartmentShowcase from "@/components/sections/ApartmentShowcase";
-import InvestmentRegions from "@/components/sections/InvestmentRegions";
 import ApartmentStickyCTA from "@/components/sections/ApartmentStickyCTA";
 import { useFavorites } from "@/components/sections/FavoritesBar";
 import { motion } from "framer-motion";
@@ -52,7 +50,7 @@ export default function ApartmentPage() {
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.5 }}
-          className="text-2xl md:text-3xl font-medium"
+          className="text-2xl md:text-3xl font-bold"
         >
           Квартира {safeId}
         </motion.h1>
@@ -89,8 +87,8 @@ export default function ApartmentPage() {
         {/* Sidebar info */}
         <aside className="rounded-2xl bg-white ring-1 ring-border shadow-xl p-6 flex flex-col gap-5 md:sticky md:top-20 h-fit">
           <div>
-            <div className="text-[clamp(44px,9vw,86px)] leading-none font-display" style={{ color: "var(--brand-foreground)" }}>4E</div>
-            <div className="mt-2 text-muted text-sm">Корпус A • 6 этаж</div>
+            <div className="text-[clamp(44px,9vw,86px)] leading-none font-display font-bold" style={{ color: "var(--brand-foreground)" }}>4E</div>
+            <div className="mt-2 text-muted text-sm font-semibold">Корпус A • 6 этаж</div>
           </div>
           {/* Минималистичные строки характеристик */}
           <div className="flex flex-col divide-y divide-border text-[15px]">
@@ -100,8 +98,8 @@ export default function ApartmentPage() {
               { k: "Вид", v: "на парк" },
             ].map((row) => (
               <div key={row.k} className="py-2.5 flex items-center justify-between gap-4">
-                <span className="text-muted whitespace-nowrap">{row.k}</span>
-                <span className="text-foreground/90 break-words text-right">{row.v}</span>
+                <span className="text-muted whitespace-nowrap font-semibold">{row.k}</span>
+                <span className="text-foreground/90 break-words text-right font-bold">{row.v}</span>
               </div>
             ))}
           </div>
@@ -111,8 +109,8 @@ export default function ApartmentPage() {
             transition={{ delay: 0.2 }}
             className="rounded-2xl bg-foreground text-background p-5 mt-2 shadow-lg"
           >
-            <div className="text-sm opacity-80">Стоимость</div>
-            <div className="text-2xl md:text-3xl font-medium">43 462 130 ₽</div>
+            <div className="text-sm opacity-80 font-semibold">Стоимость</div>
+            <div className="text-2xl md:text-3xl font-bold">43 462 130 ₽</div>
           </motion.div>
           <div className="flex gap-3 mt-1">
             <motion.a
@@ -143,13 +141,13 @@ export default function ApartmentPage() {
                   onClick={() => setView(k as ViewMode)}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className={`px-4 py-2 text-sm rounded-full transition-all duration-300 ${view===k?"bg-brand text-white shadow-md":"text-muted hover:text-foreground"}`}
+                  className={`px-4 py-2 text-sm rounded-full transition-all duration-300 font-semibold ${view===k?"bg-gradient-brand text-white shadow-md":"text-muted hover:text-foreground"}`}
                 >
                   {t}
                 </motion.button>
               ))}
             </div>
-            <div className="text-xs text-muted font-medium">№ {safeId}</div>
+            <div className="text-xs text-muted font-bold">№ {safeId}</div>
           </div>
           <div className="relative w-full overflow-hidden rounded-xl will-change-transform">
             <motion.div
@@ -187,8 +185,6 @@ export default function ApartmentPage() {
       {/* Секция с красивыми эффектами как у ever */}
       <ApartmentShowcase />
 
-      {/* Инвестиционная секция */}
-      <InvestmentRegions />
       <ApartmentStickyCTA id={safeId} />
     </main>
   );
