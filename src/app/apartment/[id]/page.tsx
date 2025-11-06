@@ -85,9 +85,9 @@ export default function ApartmentPage() {
       </div>
       <section className="grid gap-6 md:grid-cols-[0.9fr,1.1fr]">
         {/* Sidebar info */}
-        <aside className="rounded-2xl bg-white ring-1 ring-border shadow-xl p-6 flex flex-col gap-5 md:sticky md:top-20 h-fit">
+        <aside className="rounded-2xl bg-surface ring-1 ring-border shadow-xl p-6 flex flex-col gap-5 md:sticky md:top-20 h-fit">
           <div>
-            <div className="text-[clamp(44px,9vw,86px)] leading-none font-display font-bold" style={{ color: "var(--brand-foreground)" }}>4E</div>
+            <div className="text-[clamp(44px,9vw,86px)] leading-none font-display font-bold text-foreground">4E</div>
             <div className="mt-2 text-muted text-sm font-semibold">Корпус A • 6 этаж</div>
           </div>
           {/* Минималистичные строки характеристик */}
@@ -99,7 +99,7 @@ export default function ApartmentPage() {
             ].map((row) => (
               <div key={row.k} className="py-2.5 flex items-center justify-between gap-4">
                 <span className="text-muted whitespace-nowrap font-semibold">{row.k}</span>
-                <span className="text-foreground break-words text-right font-bold">{row.v}</span>
+                <span className="text-foreground/90 break-words text-right font-bold">{row.v}</span>
               </div>
             ))}
           </div>
@@ -109,7 +109,7 @@ export default function ApartmentPage() {
             transition={{ delay: 0.2 }}
             className="rounded-2xl bg-foreground text-background p-5 mt-2 shadow-lg"
           >
-            <div className="text-sm text-background/90 dark:text-background/80 font-semibold">Стоимость</div>
+            <div className="text-sm opacity-80 font-semibold">Стоимость</div>
             <div className="text-2xl md:text-3xl font-bold">43 462 130 ₽</div>
           </motion.div>
           <div className="flex gap-3 mt-1">
@@ -132,8 +132,8 @@ export default function ApartmentPage() {
           </div>
         </aside>
         {/* Viewer */}
-        <div className="rounded-2xl bg-white ring-1 ring-border shadow-lg p-3 md:p-6">
-          <div className="flex items-center justify-between mb-3 sticky top-16 z-10 bg-white/95 backdrop-blur-sm -mx-3 md:-mx-6 px-3 md:px-6 pt-3 md:pt-6 -mt-3 md:-mt-6 pb-3">
+        <div className="rounded-2xl bg-surface ring-1 ring-border shadow-lg p-3 md:p-6">
+          <div className="flex items-center justify-between mb-3 sticky top-16 z-10 bg-surface/95 backdrop-blur-sm -mx-3 md:-mx-6 px-3 md:px-6 pt-3 md:pt-6 -mt-3 md:-mt-6 pb-3">
             <div className="inline-flex rounded-full bg-surface p-1 ring-1 ring-border">
               {[{k:"plan",t:"План"},{k:"visual",t:"Визуал"}].map(({k,t}) => (
                 <motion.button

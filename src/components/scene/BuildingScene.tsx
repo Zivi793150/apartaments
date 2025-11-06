@@ -87,7 +87,7 @@ export default function BuildingScene({ onSelectApartment }: { onSelectApartment
                 top: `calc(${unit.y}% - 56px)`
               }}
             >
-              <div className="w-[177px] p-3 rounded-2xl bg-white ring-1 ring-border shadow-xl backdrop-blur">
+              <div className="w-[177px] p-3 rounded-2xl bg-surface ring-1 ring-border shadow-xl backdrop-blur">
                 <div className="flex items-center gap-3 mb-1">
                   <span className={`inline-block size-2 rounded-full ${unit.status==="available" ? "bg-brand" : "bg-muted"}`} />
                   <span className="text-xs font-medium text-muted">Этаж {unit.floor}</span>
@@ -114,7 +114,7 @@ export default function BuildingScene({ onSelectApartment }: { onSelectApartment
               transition={{ duration: 0.26, ease: [0.22, 0.61, 0.36, 1] }}
               className="md:hidden fixed left-0 right-0 bottom-0 z-50 px-3 pb-2"
             >
-              <div className="w-full max-w-lg mx-auto rounded-2xl bg-white/95 ring-1 ring-border shadow-2xl backdrop-blur p-5 flex flex-col gap-2">
+              <div className="w-full max-w-lg mx-auto rounded-2xl bg-surface/95 ring-1 ring-border shadow-2xl backdrop-blur p-5 flex flex-col gap-2">
                 <div className="flex items-center gap-3 mb-1">
                   <span className={`inline-block size-2 rounded-full ${unit.status==="available" ? "bg-brand" : "bg-muted"}`} />
                   <span className="text-xs font-medium text-muted">Этаж {unit.floor}</span>

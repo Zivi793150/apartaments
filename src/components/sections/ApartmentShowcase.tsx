@@ -91,7 +91,7 @@ export default function ApartmentShowcase() {
               whileHover={{ y: -4, scale: 1.02 }}
               transition={{ duration: 0.6, delay: i * 0.12, type: "spring", stiffness: 300 }}
               viewport={{ once: true, margin: "-80px" }}
-              className="rounded-3xl bg-white ring-1 ring-border overflow-hidden card-hover"
+              className="rounded-3xl bg-surface ring-1 ring-border overflow-hidden card-hover"
             >
               <div className="grid grid-cols-5">
                 <div className="col-span-3 p-6 pr-4">

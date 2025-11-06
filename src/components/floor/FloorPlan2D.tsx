@@ -27,7 +27,7 @@ export default function FloorPlan2D({ building, floor, view = "2d" as "2d"|"3d" 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="rounded-2xl bg-white shadow-lg ring-1 ring-border p-3 md:p-6"
+      className="rounded-2xl bg-surface shadow-lg ring-1 ring-border p-3 md:p-6"
     >
       <div className="flex items-center justify-between mb-3 md:mb-4">
         <h3 className="text-lg font-medium">Корпус {building.toUpperCase()} · {floor} этаж</h3>

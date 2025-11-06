@@ -165,7 +165,7 @@ export default function EstateBrowser3D() {
             }}
             className="mx-auto mt-3 max-w-[980px] md:max-w-[1100px]"
           >
-            <div className="rounded-2xl bg-white/95 dark:bg-background/90 backdrop-blur-md ring-1 ring-border shadow-2xl p-3 md:p-6">
+            <div className="rounded-2xl bg-surface/95 backdrop-blur-md ring-1 ring-border shadow-2xl p-3 md:p-6">
               {/* Упрощенный заголовок на мобильных */}
               <div className="flex items-center justify-between gap-2 mb-3 md:mb-4">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
