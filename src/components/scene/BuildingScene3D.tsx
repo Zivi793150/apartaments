@@ -199,7 +199,28 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
   const onTouchEnd = () => { dragRef.current = null; };
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-[980px] md:max-w-[1100px] mx-auto rounded-xl overflow-hidden ring-1 ring-border bg-surface px-3 md:px-0" style={{ overscrollBehavior: "contain", height: `${vh}vh` }} onWheelCapture={(e) => { e.preventDefault(); }}>
+    <div 
+      ref={containerRef} 
+      className="relative w-full max-w-[980px] md:max-w-[1100px] mx-auto rounded-xl overflow-hidden ring-1 ring-border bg-surface px-3 md:px-0" 
+      style={{ 
+        overscrollBehavior: "contain", 
+        height: `${vh}vh`,
+        touchAction: "pan-x pan-y", // Prevent pinch zoom on mobile
+      }} 
+      onWheelCapture={(e) => { e.preventDefault(); }}
+      onTouchStart={(e) => {
+        // Prevent double-tap zoom on mobile
+        if (e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }}
+      onTouchMove={(e) => {
+        // Prevent pinch zoom
+        if (e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }}
+    >
       {/* Parking badges */}
       <div className="absolute left-4 bottom-4 z-10 hidden md:block">
         <motion.div 
@@ -282,11 +303,12 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           enablePan={false}
           enableZoom={false}
           zoomSpeed={0}
+          enableRotate={!isMobile} // Disable rotation on mobile
           enableDamping
           dampingFactor={0.08}
           maxPolarAngle={Math.PI/2.2}
-          minDistance={5}
-          maxDistance={14}
+          minDistance={isMobile ? 8 : 5}
+          maxDistance={isMobile ? 12 : 14}
         />
       </Canvas>
 

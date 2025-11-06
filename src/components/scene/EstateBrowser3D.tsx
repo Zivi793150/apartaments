@@ -136,65 +136,6 @@ export default function EstateBrowser3D() {
             set({ hoverFloor: hotspot.floor });
           }}
         />
-
-        {/* Bottom controls - Desktop original, mobile adapted */}
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="absolute z-10 left-0 right-0 bottom-2 flex items-center justify-center px-2 sm:px-0"
-        >
-          {/* Mobile: scrollable wrapper */}
-          <div className="w-full max-w-[calc(100vw-16px)] sm:max-w-none overflow-x-auto scrollbar-hide sm:overflow-visible">
-            <div className="inline-flex bg-background/85 backdrop-blur-md rounded-full ring-1 ring-border/60 p-1 shadow-lg mx-auto">
-              {[1,2,3,4].map((r, idx) => (
-                <motion.button 
-                  key={r} 
-                  onClick={() => set({ rooms: filter.rooms===r? null : r as any })} 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ 
-                    opacity: 1, 
-                    y: 0,
-                    scale: filter.rooms === r ? 1.05 : 1,
-                  }}
-                  transition={{ delay: 0.2 + idx * 0.05, type: "spring", stiffness: 300, damping: 20 }}
-                  whileTap={{ scale: 0.92 }}
-                  whileHover={{ y: -2 }}
-                  className={`px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-300 font-semibold whitespace-nowrap ${
-                    filter.rooms===r
-                      ? "bg-gradient-brand text-white shadow-md"
-                      : "text-muted hover:text-foreground hover:bg-surface/50"
-                  }`}
-                >
-                  {r}к
-                </motion.button>
-              ))}
-              <span className="mx-1 sm:mx-1.5 w-px h-4 sm:h-5 bg-border/60" />
-              {[1,2,3,4,5,6].map((f, idx) => (
-                <motion.button 
-                  key={f} 
-                  onClick={() => set({ hoverFloor: filter.hoverFloor===f ? null : f })} 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ 
-                    opacity: 1, 
-                    y: 0,
-                    scale: filter.hoverFloor === f ? 1.05 : 1,
-                  }}
-                  transition={{ delay: 0.4 + idx * 0.03, type: "spring", stiffness: 300, damping: 20 }}
-                  whileTap={{ scale: 0.92 }}
-                  whileHover={{ y: -2 }}
-                  className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs sm:text-sm rounded-full transition-all duration-300 font-semibold whitespace-nowrap ${
-                    filter.hoverFloor===f
-                      ? "bg-gradient-brand text-white shadow-md"
-                      : "text-muted hover:text-foreground hover:bg-surface/50"
-                  }`}
-                >
-                  {f}
-                </motion.button>
-              ))}
-            </div>
-          </div>
-        </motion.div>
       </div>
 
       {/* Slide-up preview below the scene */}
