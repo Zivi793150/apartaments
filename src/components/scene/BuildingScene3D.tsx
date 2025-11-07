@@ -68,24 +68,22 @@ function ApartmentBox({
   onPick: (u: any, worldPos?: Vector3) => void;
 }) {
   const [hovered, setHovered] = React.useState(false);
-  const color = getUnitColor(kind, unit.available, hovered);
-  const opacity = dimmed ? 0.15 : hovered ? 0.95 : 1.0;
   const ref = React.useRef<any>(null);
   
   return (
     <group position={position} ref={ref}>
       {hovered && !dimmed && <NeonGlow color={getBrand(kind)} />}
       
-      {/* Dark rectangular window opening - recessed into the floor block */}
+      {/* Dark rectangular window opening - recessed into facade */}
       {!dimmed && (
         <mesh 
           onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); setHovered(true); onHover(unit, ref.current?.getWorldPosition(new Vector3())); }}
           onPointerOut={() => { setHovered(false); onHover(null); }}
           onClick={(e) => { e.stopPropagation(); if (!dimmed) onPick(unit, ref.current?.getWorldPosition(new Vector3())); }}
-          position={[0, 0.05, 0.01]} 
+          position={[0, 0, 0.01]} 
           castShadow
         >
-          <boxGeometry args={[0.75, 0.45, 0.08]} />
+          <boxGeometry args={[0.7, 0.5, 0.1]} />
           <meshStandardMaterial 
             color="#1a1d24" 
             metalness={0.2} 
@@ -151,48 +149,49 @@ function Environment() {
 
 function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit }: { kind: BuildingKind; offsetX: number; withParking: boolean; filter: SceneFilter; onHoverUnit: (u: any | null, world?: Vector3) => void; onPickUnit: (u: any, world?: Vector3) => void }) {
   const units = React.useMemo(() => generateUnits(kind), [kind]);
-  const width = UNITS_PER_FLOOR * 1.1 + 0.6;
-  const height = FLOORS * 0.7 + 0.6;
+  const UNIT_WIDTH = 0.95;
+  const UNIT_SPACING = 0.15;
+  const BUILDING_WIDTH = UNITS_PER_FLOOR * UNIT_WIDTH + (UNITS_PER_FLOOR - 1) * UNIT_SPACING + 0.3;
+  const FLOOR_HEIGHT = 0.7;
+  const BUILDING_HEIGHT = FLOORS * FLOOR_HEIGHT;
   const isActive = (filter.activeBuilding === kind);
-  const STEP_BACK = 0.06; // How much each floor steps back
-  const FLOOR_DEPTH = 0.25; // Depth of each floor block
-  const TERRACE_DEPTH = 0.12; // Terrace extends forward from floor
+  const STEP_BACK = 0.08; // Each floor steps back this amount
+  const FLOOR_DEPTH = 0.28; // Depth of each floor block
+  const TERRACE_DEPTH = 0.14; // Terrace extends forward
 
   return (
     <group position={[offsetX, 0, 0]}>
       {/* Subtle active highlight */}
       {isActive && (
         <mesh position={[0, 0, -0.05]} rotation={[0,0,0]}>
-          <planeGeometry args={[width+0.4, height+0.4]} />
+          <planeGeometry args={[BUILDING_WIDTH+0.4, BUILDING_HEIGHT+0.4]} />
           <meshBasicMaterial color={kind === "a" ? "#E0703E" : "#6C7A88"} transparent opacity={0.08} />
         </mesh>
       )}
       
-      {/* Ground level base - darker block (parking level for building A) */}
+      {/* Ground level base - parking level */}
       {withParking && (
-        <mesh position={[0, -height/2 + 0.15, 0]} castShadow receiveShadow>
-          <boxGeometry args={[width, 0.3, FLOOR_DEPTH + 0.1]} />
+        <mesh position={[0, -BUILDING_HEIGHT/2 + 0.15, 0]} castShadow receiveShadow>
+          <boxGeometry args={[BUILDING_WIDTH, 0.3, FLOOR_DEPTH + 0.05]} />
           <meshStandardMaterial color="#9a8f7f" roughness={0.8} metalness={0.05} />
         </mesh>
       )}
       
-      {/* Each floor as a separate 3D block that steps back */}
+      {/* Each floor as a separate stepped-back 3D block */}
       {Array.from({ length: FLOORS }).map((_, floorIdx) => {
         const floorNum = floorIdx + 1;
-        const floorY = (-height/2) + 0.3 + floorIdx * 0.7;
+        const floorY = -BUILDING_HEIGHT/2 + floorIdx * FLOOR_HEIGHT + FLOOR_HEIGHT/2;
         const stepBack = floorIdx * STEP_BACK;
-        const floorHeight = 0.65;
-        const floorWidth = width;
         
         return (
-          <group key={`floor-block-${floorNum}`}>
-            {/* Main floor block - 3D volume, light beige */}
+          <group key={`floor-${floorNum}`}>
+            {/* Main floor block - 3D rectangular volume */}
             <mesh 
-              position={[0, floorY + floorHeight/2, stepBack]} 
+              position={[0, floorY, stepBack]} 
               castShadow 
               receiveShadow
             >
-              <boxGeometry args={[floorWidth, floorHeight, FLOOR_DEPTH]} />
+              <boxGeometry args={[BUILDING_WIDTH, FLOOR_HEIGHT, FLOOR_DEPTH]} />
               <meshStandardMaterial 
                 color="#d4c4a8" 
                 roughness={0.7} 
@@ -200,43 +199,42 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
               />
             </mesh>
             
-            {/* Horizontal floor divider - light grey band at the bottom edge */}
-            <mesh position={[0, floorY, stepBack + FLOOR_DEPTH/2]} castShadow>
-              <boxGeometry args={[floorWidth, 0.015, 0.01]} />
+            {/* Horizontal divider line at bottom of floor */}
+            <mesh position={[0, floorY - FLOOR_HEIGHT/2, stepBack + FLOOR_DEPTH/2 + 0.001]} castShadow>
+              <boxGeometry args={[BUILDING_WIDTH, 0.015, 0.01]} />
               <meshStandardMaterial color="#d0d5db" roughness={0.8} metalness={0.1} />
             </mesh>
             
-            {/* Terrace floor - extends forward from the floor block */}
-            <mesh position={[0, floorY, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH/2]} castShadow receiveShadow>
-              <boxGeometry args={[floorWidth - 0.08, 0.025, TERRACE_DEPTH]} />
+            {/* Terrace floor - light grey, extends forward */}
+            <mesh position={[0, floorY - FLOOR_HEIGHT/2 + 0.01, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH/2]} castShadow receiveShadow>
+              <boxGeometry args={[BUILDING_WIDTH - 0.1, 0.03, TERRACE_DEPTH]} />
               <meshStandardMaterial color="#e8e8e8" roughness={0.6} metalness={0.05} />
             </mesh>
             
-            {/* Terrace railing */}
-            {/* Top horizontal rail */}
-            <mesh position={[0, floorY + 0.04, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH + 0.02]} castShadow>
-              <boxGeometry args={[floorWidth - 0.08, 0.006, 0.006]} />
+            {/* Terrace railing - top horizontal rail */}
+            <mesh position={[0, floorY - FLOOR_HEIGHT/2 + 0.05, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH + 0.01]} castShadow>
+              <boxGeometry args={[BUILDING_WIDTH - 0.1, 0.006, 0.006]} />
               <meshStandardMaterial color="#2a2d35" metalness={0.7} roughness={0.3} />
             </mesh>
             
             {/* Vertical railing posts */}
             {Array.from({ length: UNITS_PER_FLOOR + 1 }).map((_, i) => {
-              const postX = (-floorWidth/2) + 0.04 + i * (floorWidth - 0.08) / UNITS_PER_FLOOR;
+              const postX = (-BUILDING_WIDTH/2) + 0.05 + i * (BUILDING_WIDTH - 0.1) / UNITS_PER_FLOOR;
               return (
                 <mesh 
                   key={`post-${floorNum}-${i}`} 
-                  position={[postX, floorY + 0.02, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH + 0.02]} 
+                  position={[postX, floorY - FLOOR_HEIGHT/2 + 0.03, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH + 0.01]} 
                   castShadow
                 >
-                  <boxGeometry args={[0.006, 0.05, 0.006]} />
+                  <boxGeometry args={[0.006, 0.06, 0.006]} />
                   <meshStandardMaterial color="#2a2d35" metalness={0.7} roughness={0.3} />
                 </mesh>
               );
             })}
             
             {/* Glass panels between posts */}
-            <mesh position={[0, floorY + 0.02, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH + 0.02]}>
-              <boxGeometry args={[floorWidth - 0.08, 0.05, 0.001]} />
+            <mesh position={[0, floorY - FLOOR_HEIGHT/2 + 0.03, stepBack + FLOOR_DEPTH/2 + TERRACE_DEPTH + 0.01]}>
+              <boxGeometry args={[BUILDING_WIDTH - 0.1, 0.06, 0.001]} />
               <meshStandardMaterial 
                 color="#87CEEB" 
                 transparent 
@@ -246,24 +244,24 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
               />
             </mesh>
             
-            {/* Vertical structural elements - light grey lines on the sides */}
-            {/* Left edge */}
-            <mesh position={[-floorWidth/2, floorY + floorHeight/2, stepBack]} castShadow>
-              <boxGeometry args={[0.012, floorHeight, 0.012]} />
-              <meshStandardMaterial color="#c3c9cf" roughness={0.8} metalness={0.1} />
-            </mesh>
-            {/* Right edge */}
-            <mesh position={[floorWidth/2, floorY + floorHeight/2, stepBack]} castShadow>
-              <boxGeometry args={[0.012, floorHeight, 0.012]} />
+            {/* Vertical structural lines - left edge */}
+            <mesh position={[-BUILDING_WIDTH/2, floorY, stepBack]} castShadow>
+              <boxGeometry args={[0.012, FLOOR_HEIGHT, 0.012]} />
               <meshStandardMaterial color="#c3c9cf" roughness={0.8} metalness={0.1} />
             </mesh>
             
-            {/* Vertical dividers between units on this floor */}
+            {/* Vertical structural lines - right edge */}
+            <mesh position={[BUILDING_WIDTH/2, floorY, stepBack]} castShadow>
+              <boxGeometry args={[0.012, FLOOR_HEIGHT, 0.012]} />
+              <meshStandardMaterial color="#c3c9cf" roughness={0.8} metalness={0.1} />
+            </mesh>
+            
+            {/* Vertical dividers between units */}
             {Array.from({ length: UNITS_PER_FLOOR - 1 }).map((_, i) => {
-              const unitX = (-floorWidth/2) + 0.8 + (i + 1) * 1.1;
+              const unitX = (-BUILDING_WIDTH/2) + 0.15 + (i + 1) * (UNIT_WIDTH + UNIT_SPACING) + UNIT_WIDTH/2;
               return (
-                <mesh key={`divider-${floorNum}-${i}`} position={[unitX, floorY + floorHeight/2, stepBack]} castShadow>
-                  <boxGeometry args={[0.008, floorHeight, 0.008]} />
+                <mesh key={`divider-${floorNum}-${i}`} position={[unitX, floorY, stepBack]} castShadow>
+                  <boxGeometry args={[0.008, FLOOR_HEIGHT, 0.008]} />
                   <meshStandardMaterial color="#c3c9cf" roughness={0.8} metalness={0.1} />
                 </mesh>
               );
@@ -272,10 +270,10 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
         );
       })}
 
-      {/* Apartment units with dark window openings - positioned on each floor block */}
+      {/* Apartment units with dark window openings */}
       {units.map((u) => {
-        const x = (-width/2) + 0.8 + (u.col-1) * 1.1;
-        const y = (-height/2) + 0.55 + (u.floor-1) * 0.7;
+        const x = (-BUILDING_WIDTH/2) + 0.15 + (u.col-1) * (UNIT_WIDTH + UNIT_SPACING) + UNIT_WIDTH/2;
+        const y = -BUILDING_HEIGHT/2 + (u.floor-1) * FLOOR_HEIGHT + FLOOR_HEIGHT/2;
         const stepBack = (u.floor - 1) * STEP_BACK;
         const matches = (
           (filter.activeBuilding === "all" || filter.activeBuilding === kind) &&
@@ -284,7 +282,7 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
           (!filter.hoverFloor || u.floor === filter.hoverFloor)
         );
         return (
-          <ApartmentBox key={u.id} kind={kind} unit={u} position={[x, y, stepBack + FLOOR_DEPTH/2]} dimmed={!matches} onHover={onHoverUnit} onPick={onPickUnit} />
+          <ApartmentBox key={u.id} kind={kind} unit={u} position={[x, y, stepBack + FLOOR_DEPTH/2 - 0.01]} dimmed={!matches} onHover={onHoverUnit} onPick={onPickUnit} />
         );
       })}
     </group>
