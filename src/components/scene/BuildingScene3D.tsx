@@ -381,7 +381,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 
       <Canvas
         shadows
-        camera={{ position: isMobile ? [4, 4, 8] as any : [5, 4, 9] as any, fov: isMobile ? 42 : 36 }}
+        camera={{ position: isMobile ? [2, 3, 6] as any : [3, 3, 7] as any, fov: isMobile ? 50 : 45 }}
         dpr={[1, 2]}
         onPointerMissed={() => { setHovered(null); }}
       >
@@ -413,7 +413,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         <LoadedBuilding 
           modelPath="/models/building.glb" 
           position={[0, 0, 0]} 
-          scale={2}
+          scale={4}
           activeBuilding={filter.activeBuilding}
           filter={filter}
         />
@@ -431,8 +431,8 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           dampingFactor={0.05}
           maxPolarAngle={Math.PI/2.2}
           minPolarAngle={Math.PI/3}
-          minDistance={isMobile ? 6 : 5}
-          maxDistance={isMobile ? 7 : 6}
+          minDistance={isMobile ? 4 : 3}
+          maxDistance={isMobile ? 5 : 4}
           autoRotate={false}
         />
       </Canvas>
@@ -458,11 +458,11 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 function CameraLerp({ targetXRef, isMobile }: { targetXRef: React.MutableRefObject<number>; isMobile: boolean }) {
   const { camera } = useThree();
   const controls = (CameraLerp as any).controlsRef as any | undefined;
-  const targetDistance = React.useRef<number>(isMobile ? 6 : 5); // Fixed target distance
+  const targetDistance = React.useRef<number>(isMobile ? 4 : 3); // Fixed target distance
   
   // Обновляем targetDistance при изменении isMobile
   React.useEffect(() => {
-    targetDistance.current = isMobile ? 6 : 5;
+    targetDistance.current = isMobile ? 4 : 3;
   }, [isMobile]);
   
   useFrame(() => {
