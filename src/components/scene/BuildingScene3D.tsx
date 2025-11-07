@@ -381,12 +381,12 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 
       <Canvas
         shadows
-        camera={{ position: isMobile ? [6.2, 5.2, 10.5] as any : [7.2, 5.2, 11.5] as any, fov: isMobile ? 42 : 36 }}
+        camera={{ position: isMobile ? [4, 4, 8] as any : [5, 4, 9] as any, fov: isMobile ? 42 : 36 }}
         dpr={[1, 2]}
         onPointerMissed={() => { setHovered(null); }}
       >
         {/* Smooth camera focus on active building */}
-        <CameraLerp targetXRef={targetXRef} />
+        <CameraLerp targetXRef={targetXRef} isMobile={isMobile} />
         <color attach="background" args={[0,0,0]} />
         {/* Enhanced lighting setup for premium look */}
         <ambientLight intensity={0.5} />
@@ -413,7 +413,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         <LoadedBuilding 
           modelPath="/models/building.glb" 
           position={[0, 0, 0]} 
-          scale={0.5}
+          scale={2}
           activeBuilding={filter.activeBuilding}
           filter={filter}
         />
@@ -431,8 +431,8 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           dampingFactor={0.05}
           maxPolarAngle={Math.PI/2.2}
           minPolarAngle={Math.PI/3}
-          minDistance={isMobile ? 9.5 : 7.5}
-          maxDistance={isMobile ? 10.5 : 8.5}
+          minDistance={isMobile ? 6 : 5}
+          maxDistance={isMobile ? 7 : 6}
           autoRotate={false}
         />
       </Canvas>
@@ -455,10 +455,15 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
   );
 }
 
-function CameraLerp({ targetXRef }: { targetXRef: React.MutableRefObject<number> }) {
+function CameraLerp({ targetXRef, isMobile }: { targetXRef: React.MutableRefObject<number>; isMobile: boolean }) {
   const { camera } = useThree();
   const controls = (CameraLerp as any).controlsRef as any | undefined;
-  const targetDistance = React.useRef<number>(8); // Fixed target distance
+  const targetDistance = React.useRef<number>(isMobile ? 6 : 5); // Fixed target distance
+  
+  // Обновляем targetDistance при изменении isMobile
+  React.useEffect(() => {
+    targetDistance.current = isMobile ? 6 : 5;
+  }, [isMobile]);
   
   useFrame(() => {
     if (!controls || !controls.target) return;
