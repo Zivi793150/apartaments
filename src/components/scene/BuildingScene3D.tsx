@@ -98,25 +98,40 @@ function ApartmentBox({
         <boxGeometry args={[0.95, 0.08, 0.18]} />
         <meshStandardMaterial color="#dcdfe4" roughness={0.7} metalness={0.1} />
       </mesh>
-      {/* Large windows with frames */}
+      {/* Large panoramic windows with frames - floor-to-ceiling style */}
       {!dimmed && (
         <>
+          {/* Window frames - thinner, darker */}
           <mesh position={[-0.25, 0.1, 0.21]} castShadow>
-            <boxGeometry args={[0.15, 0.2, 0.02]} />
-            <meshStandardMaterial color="#2a2d35" metalness={0.8} roughness={0.2} />
+            <boxGeometry args={[0.18, 0.35, 0.015]} />
+            <meshStandardMaterial color="#1a1d24" metalness={0.85} roughness={0.15} />
           </mesh>
           <mesh position={[0.25, 0.1, 0.21]} castShadow>
-            <boxGeometry args={[0.15, 0.2, 0.02]} />
-            <meshStandardMaterial color="#2a2d35" metalness={0.8} roughness={0.2} />
+            <boxGeometry args={[0.18, 0.35, 0.015]} />
+            <meshStandardMaterial color="#1a1d24" metalness={0.85} roughness={0.15} />
           </mesh>
-          {/* Glass panes */}
+          {/* Glass panes - larger, more reflective */}
           <mesh position={[-0.25, 0.1, 0.22]}>
-            <boxGeometry args={[0.13, 0.18, 0.01]} />
-            <meshStandardMaterial color="#87CEEB" transparent opacity={0.3} metalness={0.9} roughness={0.1} />
+            <boxGeometry args={[0.16, 0.33, 0.008]} />
+            <meshStandardMaterial 
+              color="#a8d5e2" 
+              transparent 
+              opacity={0.25} 
+              metalness={0.95} 
+              roughness={0.05}
+              envMapIntensity={1.2}
+            />
           </mesh>
           <mesh position={[0.25, 0.1, 0.22]}>
-            <boxGeometry args={[0.13, 0.18, 0.01]} />
-            <meshStandardMaterial color="#87CEEB" transparent opacity={0.3} metalness={0.9} roughness={0.1} />
+            <boxGeometry args={[0.16, 0.33, 0.008]} />
+            <meshStandardMaterial 
+              color="#a8d5e2" 
+              transparent 
+              opacity={0.25} 
+              metalness={0.95} 
+              roughness={0.05}
+              envMapIntensity={1.2}
+            />
           </mesh>
         </>
       )}
@@ -140,15 +155,50 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
         </mesh>
       )}
       
-      {/* Main building facade - premium material */}
+      {/* Stone base/cladding at ground level - premium detail */}
+      <mesh position={[0, -height/2 + 0.15, 0.1]} castShadow receiveShadow>
+        <boxGeometry args={[width + 0.2, 0.3, 0.25]} />
+        <meshStandardMaterial 
+          color="#d4c9b8" 
+          roughness={0.9} 
+          metalness={0.05}
+        />
+      </mesh>
+      
+      {/* Main building facade - terraced structure (each floor steps back) */}
+      {Array.from({ length: FLOORS }).map((_, floorIdx) => {
+        const floorNum = floorIdx + 1;
+        const floorY = (-height/2) + 0.3 + floorIdx * 0.7;
+        const stepBack = floorIdx * 0.08; // Each floor steps back
+        const floorHeight = 0.65;
+        return (
+          <mesh 
+            key={`facade-${floorNum}`}
+            position={[0, floorY + floorHeight/2, stepBack]} 
+            castShadow 
+            receiveShadow
+          >
+            <boxGeometry args={[width - (floorIdx * 0.1), floorHeight, 0.4]} />
+            <meshStandardMaterial 
+              color={kind === "a" ? "#F8F6F3" : "#F0F2F5"} 
+              roughness={0.75} 
+              metalness={0.05}
+              emissive={isActive ? (kind === "a" ? "#E0703E" : "#6C7A88") : "#000000"}
+              emissiveIntensity={isActive ? 0.03 : 0}
+            />
+          </mesh>
+        );
+      })}
+      
+      {/* Main building facade - base structure (fallback for overall shape) */}
       <mesh position={[0, height/2 - 0.35, 0]} castShadow receiveShadow>
         <boxGeometry args={[width, height, 0.4]} />
         <meshStandardMaterial 
           color={kind === "a" ? "#F3F1EE" : "#EAECEF"} 
           roughness={0.7} 
           metalness={0.05}
-          emissive={isActive ? (kind === "a" ? "#E0703E" : "#6C7A88") : "#000000"}
-          emissiveIntensity={isActive ? 0.05 : 0}
+          transparent
+          opacity={0.3}
         />
       </mesh>
       
@@ -183,37 +233,94 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
         </mesh>
       ))}
       
-      {/* Terraces/Balconies for each floor - premium detail */}
+      {/* Terraces/Balconies for each floor - enhanced with furniture and plants */}
       {Array.from({ length: FLOORS }).map((_, floorIdx) => {
         const floorNum = floorIdx + 1;
         const floorY = (-height/2) + 0.55 + floorIdx * 0.7;
+        const stepBack = floorIdx * 0.08;
+        const terraceWidth = width - 0.2 - (floorIdx * 0.1);
         return (
           <group key={`terrace-${floorNum}`}>
-            {/* Terrace floor */}
-            <mesh position={[0, floorY - 0.3, 0.25]} castShadow receiveShadow>
-              <boxGeometry args={[width - 0.2, 0.05, 0.15]} />
-              <meshStandardMaterial color="#e8e8e8" roughness={0.6} metalness={0.05} />
+            {/* Terrace floor - light tile material */}
+            <mesh position={[0, floorY - 0.3, 0.25 + stepBack]} castShadow receiveShadow>
+              <boxGeometry args={[terraceWidth, 0.05, 0.2]} />
+              <meshStandardMaterial color="#f0f0f0" roughness={0.5} metalness={0.02} />
             </mesh>
-            {/* Glass railings on terraces */}
-            <mesh position={[0, floorY - 0.25, 0.32]} castShadow>
-              <boxGeometry args={[width - 0.2, 0.08, 0.01]} />
-              <meshStandardMaterial color="#87CEEB" transparent opacity={0.4} metalness={0.9} roughness={0.1} />
+            {/* Glass railings on terraces - more transparent */}
+            <mesh position={[0, floorY - 0.25, 0.35 + stepBack]} castShadow>
+              <boxGeometry args={[terraceWidth, 0.1, 0.01]} />
+              <meshStandardMaterial color="#a8d5e2" transparent opacity={0.35} metalness={0.95} roughness={0.05} />
             </mesh>
-            {/* Railing posts */}
+            {/* Railing posts - thinner and more elegant */}
             {Array.from({ length: UNITS_PER_FLOOR + 1 }).map((_, i) => (
-              <mesh key={`post-${floorNum}-${i}`} position={[(-width/2) + 0.1 + i * (width - 0.2) / UNITS_PER_FLOOR, floorY - 0.25, 0.32]} castShadow>
-                <boxGeometry args={[0.015, 0.08, 0.015]} />
-                <meshStandardMaterial color="#2a2d35" metalness={0.8} roughness={0.2} />
+              <mesh key={`post-${floorNum}-${i}`} position={[(-terraceWidth/2) + 0.1 + i * terraceWidth / UNITS_PER_FLOOR, floorY - 0.25, 0.35 + stepBack]} castShadow>
+                <boxGeometry args={[0.012, 0.1, 0.012]} />
+                <meshStandardMaterial color="#1a1d24" metalness={0.85} roughness={0.15} />
               </mesh>
             ))}
+            
+            {/* Outdoor furniture on terraces (every other floor for variety) */}
+            {floorNum % 2 === 0 && (
+              <>
+                {/* Modular sofa */}
+                <mesh position={[-0.3, floorY - 0.28, 0.3 + stepBack]} castShadow>
+                  <boxGeometry args={[0.25, 0.08, 0.12]} />
+                  <meshStandardMaterial color="#e8dcc6" roughness={0.7} metalness={0.1} />
+                </mesh>
+                {/* Small table */}
+                <mesh position={[0.1, floorY - 0.28, 0.3 + stepBack]} castShadow>
+                  <boxGeometry args={[0.08, 0.06, 0.08]} />
+                  <meshStandardMaterial color="#d4c4a8" roughness={0.6} metalness={0.15} />
+                </mesh>
+                {/* Plant pot */}
+                <mesh position={[0.35, floorY - 0.28, 0.3 + stepBack]} castShadow>
+                  <cylinderGeometry args={[0.04, 0.04, 0.1, 16]} />
+                  <meshStandardMaterial color="#8b7355" roughness={0.8} metalness={0.1} />
+                </mesh>
+                {/* Plant (simple cylinder for greenery) */}
+                <mesh position={[0.35, floorY - 0.22, 0.3 + stepBack]}>
+                  <coneGeometry args={[0.06, 0.12, 8]} />
+                  <meshStandardMaterial color="#4a7c59" roughness={0.9} metalness={0.05} />
+                </mesh>
+              </>
+            )}
+            
+            {/* Top floor - penthouse terrace with more furniture */}
+            {floorNum === FLOORS && (
+              <>
+                {/* Larger seating area */}
+                <mesh position={[-0.4, floorY - 0.28, 0.3 + stepBack]} castShadow>
+                  <boxGeometry args={[0.35, 0.08, 0.15]} />
+                  <meshStandardMaterial color="#e8dcc6" roughness={0.7} metalness={0.1} />
+                </mesh>
+                <mesh position={[0.2, floorY - 0.28, 0.3 + stepBack]} castShadow>
+                  <boxGeometry args={[0.3, 0.08, 0.15]} />
+                  <meshStandardMaterial color="#e8dcc6" roughness={0.7} metalness={0.1} />
+                </mesh>
+                {/* Multiple plants */}
+                {[-0.1, 0.45].map((x, i) => (
+                  <group key={`plant-${i}`}>
+                    <mesh position={[x, floorY - 0.28, 0.3 + stepBack]} castShadow>
+                      <cylinderGeometry args={[0.05, 0.05, 0.12, 16]} />
+                      <meshStandardMaterial color="#8b7355" roughness={0.8} metalness={0.1} />
+                    </mesh>
+                    <mesh position={[x, floorY - 0.22, 0.3 + stepBack]}>
+                      <coneGeometry args={[0.08, 0.15, 8]} />
+                      <meshStandardMaterial color="#4a7c59" roughness={0.9} metalness={0.05} />
+                    </mesh>
+                  </group>
+                ))}
+              </>
+            )}
           </group>
         );
       })}
 
-      {/* Apartment units */}
+      {/* Apartment units - positioned with terrace step-back */}
       {units.map((u) => {
         const x = (-width/2) + 0.8 + (u.col-1) * 1.1;
         const y = (-height/2) + 0.55 + (u.floor-1) * 0.7;
+        const stepBack = (u.floor - 1) * 0.08; // Step back with floor
         const matches = (
           (filter.activeBuilding === "all" || filter.activeBuilding === kind) &&
           (!filter.onlyAvailable || u.available) &&
@@ -221,9 +328,33 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
           (!filter.hoverFloor || u.floor === filter.hoverFloor)
         );
         return (
-          <ApartmentBox key={u.id} kind={kind} unit={u} position={[x, y, 0.31]} dimmed={!matches} onHover={onHoverUnit} onPick={onPickUnit} />
+          <ApartmentBox key={u.id} kind={kind} unit={u} position={[x, y, 0.31 + stepBack]} dimmed={!matches} onHover={onHoverUnit} onPick={onPickUnit} />
         );
       })}
+      
+      {/* Ground floor entrance - decorative elements */}
+      {kind === "a" && (
+        <group>
+          {/* Main entrance with glass doors */}
+          <mesh position={[0, -height/2 + 0.25, 0.15]} castShadow>
+            <boxGeometry args={[0.3, 0.4, 0.02]} />
+            <meshStandardMaterial color="#1a1d24" metalness={0.85} roughness={0.15} />
+          </mesh>
+          <mesh position={[0, -height/2 + 0.25, 0.16]}>
+            <boxGeometry args={[0.28, 0.38, 0.01]} />
+            <meshStandardMaterial color="#a8d5e2" transparent opacity={0.3} metalness={0.95} roughness={0.05} />
+          </mesh>
+          {/* Decorative window grilles on ground floor */}
+          <mesh position={[-0.5, -height/2 + 0.3, 0.12]} castShadow>
+            <boxGeometry args={[0.2, 0.25, 0.01]} />
+            <meshStandardMaterial color="#F8F6F3" metalness={0.3} roughness={0.4} />
+          </mesh>
+          <mesh position={[0.5, -height/2 + 0.3, 0.12]} castShadow>
+            <boxGeometry args={[0.2, 0.25, 0.01]} />
+            <meshStandardMaterial color="#F8F6F3" metalness={0.3} roughness={0.4} />
+          </mesh>
+        </group>
+      )}
     </group>
   );
 }
