@@ -1,14 +1,19 @@
 "use client";
 import * as React from "react";
 import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { Vector3 } from "three";
+import { OrbitControls, useGLTF } from "@react-three/drei";
+import { Vector3, Mesh, Group, Box3 } from "three";
 import { useFrame } from "@react-three/fiber";
 import { motion } from "framer-motion";
 
 export type PickedUnit = { id: string; area: number; rooms: number } | null;
 
 import { useRouter } from "next/navigation";
+
+// Предзагрузка модели для оптимизации
+if (typeof window !== "undefined") {
+  useGLTF.preload("/models/building.glb");
+}
 
 type BuildingKind = "a" | "b";
 
@@ -404,8 +409,17 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           <planeGeometry args={[40, 40]} />
           <meshStandardMaterial color="#ece7e2" roughness={0.95} />
         </mesh>
-        <Building kind="a" withParking offsetX={-3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
-        <Building kind="b" withParking={false} offsetX={3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
+        {/* Загруженная GLB модель - пробуем использовать вместо програмной */}
+        <LoadedBuilding 
+          modelPath="/models/building.glb" 
+          position={[0, 0, 0]} 
+          scale={0.5}
+          activeBuilding={filter.activeBuilding}
+          filter={filter}
+        />
+        {/* Програмная модель - можно оставить как fallback или для сравнения */}
+        {/* <Building kind="a" withParking offsetX={-3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
+        <Building kind="b" withParking={false} offsetX={3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} /> */}
         <ProjectorInside hovered={hovered} onProject={(pt)=>setScreenPos(pt)} />
         <OrbitControls
           ref={(ctrl:any)=>{(CameraLerp as any).controlsRef=ctrl}}
@@ -471,3 +485,105 @@ function CameraLerp({ targetXRef }: { targetXRef: React.MutableRefObject<number>
   });
   return null;
 }
+
+// Компонент для загрузки и отображения GLB модели
+function LoadedBuilding({ 
+  modelPath, 
+  position, 
+  scale = 1, 
+  activeBuilding,
+  filter 
+}: { 
+  modelPath: string; 
+  position: [number, number, number];
+  scale?: number;
+  activeBuilding: "all" | BuildingKind;
+  filter: SceneFilter;
+}) {
+  const { scene } = useGLTF(modelPath);
+  const clonedScene = React.useMemo(() => {
+    const clone = scene.clone();
+    // Настраиваем материалы для лучшего отображения
+    clone.traverse((child) => {
+      if (child instanceof Mesh && child.material) {
+        const material = child.material as any;
+        if (Array.isArray(material)) {
+          material.forEach((mat: any) => {
+            if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
+              mat.castShadow = true;
+              mat.receiveShadow = true;
+              // Улучшаем материалы для premium look
+              if (!mat.emissive) {
+                mat.emissive = { r: 0, g: 0, b: 0 };
+              }
+            }
+          });
+        } else {
+          if (material.isMeshStandardMaterial || material.isMeshPhysicalMaterial) {
+            material.castShadow = true;
+            material.receiveShadow = true;
+            if (!material.emissive) {
+              material.emissive = { r: 0, g: 0, b: 0 };
+            }
+          }
+        }
+      }
+    });
+    return clone;
+  }, [scene]);
+  
+  // Вычисляем bounding box для автоматического центрирования и масштабирования (опционально)
+  // React.useEffect(() => {
+  //   const box = new Box3().setFromObject(clonedScene);
+  //   const center = box.getCenter(new Vector3());
+  //   const size = box.getSize(new Vector3());
+  //   console.log("Model bounds:", { center, size });
+  // }, [clonedScene]);
+
+  // Подсветка активного корпуса
+  React.useEffect(() => {
+    clonedScene.traverse((child) => {
+      if (child instanceof Mesh && child.material) {
+        const material = child.material as any;
+        const isArray = Array.isArray(material);
+        const materials = isArray ? material : [material];
+        
+        materials.forEach((mat: any) => {
+          if (mat.isMeshStandardMaterial || mat.isMeshPhysicalMaterial) {
+            if (activeBuilding === "all") {
+              // Слабая подсветка всех корпусов
+              mat.emissive.setStyle("#000000");
+              mat.emissiveIntensity = 0;
+            } else {
+              // Определяем, какой корпус подсвечивать по позиции модели
+              // Если модель содержит оба корпуса, можно использовать имена объектов
+              const shouldHighlight = 
+                (activeBuilding === "a" && position[0] <= 0) ||
+                (activeBuilding === "b" && position[0] >= 0);
+              
+              if (shouldHighlight) {
+                const brandColor = activeBuilding === "a" ? "#E0703E" : "#6C7A88";
+                mat.emissive.setStyle(brandColor);
+                mat.emissiveIntensity = 0.1;
+              } else {
+                mat.emissive.setStyle("#000000");
+                mat.emissiveIntensity = 0;
+              }
+            }
+          }
+        });
+      }
+    });
+  }, [activeBuilding, clonedScene, position]);
+
+  return (
+    <primitive 
+      object={clonedScene} 
+      position={position} 
+      scale={scale}
+      castShadow
+      receiveShadow
+    />
+  );
+}
+
