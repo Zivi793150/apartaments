@@ -277,14 +277,9 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
     }
   }, [isMobile]);
 
-  // smooth focus to active building (A/B/All) - starts on A
-  const targetXRef = React.useRef<number>(-3.6); // Initialize on building A
-  React.useEffect(() => {
-    // центры зданий соответствуют offsetX для левого/правого корпусов
-    if (filter.activeBuilding === "a") targetXRef.current = -3.6;
-    else if (filter.activeBuilding === "b") targetXRef.current = 3.6;
-    else targetXRef.current = 0; // центр
-  }, [filter.activeBuilding]);
+  // Для новой GLB модели всегда фокусируемся на центре (0,0,0)
+  const targetXRef = React.useRef<number>(0); // Центр модели
+  // Убираем логику переключения между корпусами, так как модель теперь одна
 
   // Drag handle for mobile to resize scene height
   const dragRef = React.useRef<{startY:number;startVh:number}|null>(null);
@@ -385,8 +380,8 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         dpr={[1, 2]}
         onPointerMissed={() => { setHovered(null); }}
       >
-        {/* Smooth camera focus on active building */}
-        <CameraLerp targetXRef={targetXRef} isMobile={isMobile} />
+        {/* Smooth camera focus on center */}
+        <CameraLerp isMobile={isMobile} />
         <color attach="background" args={[0,0,0]} />
         {/* Enhanced lighting setup for premium look */}
         <ambientLight intensity={0.5} />
@@ -434,6 +429,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           minDistance={isMobile ? 3 : 2}
           maxDistance={isMobile ? 4 : 3}
           autoRotate={false}
+          target={[0, 0, 0]}
         />
       </Canvas>
 
@@ -455,7 +451,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
   );
 }
 
-function CameraLerp({ targetXRef, isMobile }: { targetXRef: React.MutableRefObject<number>; isMobile: boolean }) {
+function CameraLerp({ isMobile }: { isMobile: boolean }) {
   const { camera } = useThree();
   const controls = (CameraLerp as any).controlsRef as any | undefined;
   const targetDistance = React.useRef<number>(isMobile ? 3 : 2.5); // Fixed target distance
@@ -465,16 +461,18 @@ function CameraLerp({ targetXRef, isMobile }: { targetXRef: React.MutableRefObje
     targetDistance.current = isMobile ? 3 : 2.5;
   }, [isMobile]);
   
+  // Убеждаемся, что controls.target всегда в центре (0,0,0)
+  React.useEffect(() => {
+    if (controls && controls.target) {
+      controls.target.set(0, 0, 0);
+    }
+  }, [controls]);
+  
   useFrame(() => {
     if (!controls || !controls.target) return;
     
-    // Smooth lerp camera X position
-    const dx = targetXRef.current - camera.position.x;
-    camera.position.x += dx * 0.08;
-    
-    // Smooth lerp target X position
-    const dtx = targetXRef.current - controls.target.x;
-    controls.target.x += dtx * 0.1;
+    // Всегда держим target в центре (0,0,0)
+    controls.target.set(0, 0, 0);
     
     // Maintain fixed distance from target to prevent zoom
     const currentDistance = camera.position.distanceTo(controls.target);
@@ -514,8 +512,13 @@ function LoadedBuilding({
     const center = box.getCenter(new Vector3());
     const size = box.getSize(new Vector3());
     
-    // Центрируем модель, перемещая её так, чтобы центр был в (0,0,0)
-    clone.position.sub(center);
+    // Центрируем модель: перемещаем её так, чтобы геометрический центр был в (0,0,0)
+    // Важно: сначала вычисляем центр, потом перемещаем
+    const offset = center.clone().negate();
+    clone.position.copy(offset);
+    
+    // Также нужно переместить все дочерние объекты относительно их текущей позиции
+    // Но обычно достаточно переместить сам clone
     
     // Настраиваем материалы для лучшего отображения
     clone.traverse((child) => {
