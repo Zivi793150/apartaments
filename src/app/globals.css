@@ -1,32 +1,32 @@
 @import "tailwindcss";
 
 :root {
-  /* Brighter premium palette (minimal, colorful, elegant) */
-  --background: #F7F6F3; /* brighter plaster */
-  --foreground: #14171B; /* refined graphite */
-  --surface: #FFFCF8;   /* airy card */
-  --muted: #73818B;     /* soft slate */
+  /* Brighter + more saturated palette (поживее) */
+  --background: #F8F6F1;
+  --foreground: #14171B;
+  --surface: #FFFEFB;
+  --muted: #667482;
 
   /* Accents */
-  --brand: #E0703E;            /* brighter copper */
+  --brand: #FF6A2B;               /* насыщенный апельсин */
   --brand-foreground: #FFFFFF;
-  --brand-light: #F5C4AD;      /* brighter pastel */
-  --brand-dark: #C25E32;
+  --brand-light: #FFC7A8;         /* светлый персик */
+  --brand-dark: #D14A16;          /* глубокая терракота */
   
-  --accent-terra: #D77751;     /* more vivid terra */
-  --accent-satin: #D4DBE3;     /* lighter satin */
-  --accent-pastel-1: #FFF1E7;  /* peach cream */
-  --accent-pastel-2: #F3EEE8;  /* soft beige */
-  --accent-pastel-3: #E6DED6;  /* warm grey */
+  --accent-terra: #E36C3D;        /* насыщенная терра */
+  --accent-satin: #D9E2EB;        /* чище и светлее */
+  --accent-pastel-1: #FFF2E6;     /* теплее */
+  --accent-pastel-2: #F5EEE6;
+  --accent-pastel-3: #E9DED2;
 
   /* UI outlines */
-  --ring: #D8DEE6;
-  --border: #ECE7E1;
+  --ring: #D5DEE8;
+  --border: #EDE4DB;
   
   /* Gradients */
-  --gradient-warm: linear-gradient(135deg, #FFF6F0 0%, #F3EEE8 100%);
-  --gradient-brand: linear-gradient(135deg, #FF8A55 0%, #E0703E 60%, #C25E32 100%);
-  --gradient-pastel: linear-gradient(135deg, #FFFCF8 0%, #FFF1E7 50%, #F3EEE8 100%);
+  --gradient-warm: linear-gradient(135deg, #FFF7F0 0%, #F7EFE6 100%);
+  --gradient-brand: linear-gradient(135deg, #FFA068 0%, #FF6A2B 58%, #D14A16 100%);
+  --gradient-pastel: linear-gradient(135deg, #FFFEFB 0%, #FFF2E6 52%, #F7EFE6 100%);
 }
 
 @theme inline {
@@ -52,13 +52,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0c0f13;
+    --background: #0b0e12;
     --foreground: #f5f8fc; /* Более яркий и контрастный */
     --surface: #151a21;
-    --muted: #b8c5d1; /* Более яркий для лучшей читаемости */
-    --brand: #FF8A55;
-    --brand-light: #F0BBA1;
-    --brand-dark: #D7764A;
+    --muted: #c0cfdb; /* Чуть ярче для читаемости */
+    --brand: #FF7433;
+    --brand-light: #FFB892;
+    --brand-dark: #E05A22;
     --accent-terra: #E28F69;
     --accent-satin: #6C7A88;
     --accent-pastel-1: #1A2027;
@@ -66,21 +66,21 @@
     --accent-pastel-3: #1F262D;
     --border: #1b2128;
     --ring: #2D3745;
-    --gradient-warm: linear-gradient(135deg, #0c0f13 0%, #161C23 100%);
-    --gradient-brand: linear-gradient(135deg, #FF8A55 0%, #E0703E 60%, #D7764A 100%);
+    --gradient-warm: linear-gradient(135deg, #0b0e12 0%, #161C23 100%);
+    --gradient-brand: linear-gradient(135deg, #FF9A66 0%, #FF7433 58%, #E05A22 100%);
     --gradient-pastel: linear-gradient(135deg, #151a21 0%, #1A2027 50%, #1F262D 100%);
   }
 }
 
 /* Manual theme override */
 :root[data-theme="dark"] {
-  --background: #0d1014;
+  --background: #0c0f13;
   --foreground: #f5f8fc; /* Более яркий и контрастный */
-  --surface: #141920;
-  --muted: #b8c5d1; /* Более яркий для лучшей читаемости */
-  --brand: #FF8A55;
-  --brand-light: #F0BBA1;
-  --brand-dark: #D7764A;
+  --surface: #141a20;
+  --muted: #c0cfdb; /* Более яркий для лучшей читаемости */
+  --brand: #FF7433;
+  --brand-light: #FFB892;
+  --brand-dark: #E05A22;
   --accent-terra: #E28F69;
   --accent-satin: #6C7A88;
   --accent-pastel-1: #1A1F26;
@@ -88,8 +88,8 @@
   --accent-pastel-3: #1F252A;
   --border: #1f252a;
   --ring: #2A3340;
-  --gradient-warm: linear-gradient(135deg, #0d1014 0%, #161B22 100%);
-  --gradient-brand: linear-gradient(135deg, #FF8A55 0%, #E0703E 60%, #D7764A 100%);
+  --gradient-warm: linear-gradient(135deg, #0c0f13 0%, #161B22 100%);
+  --gradient-brand: linear-gradient(135deg, #FF9A66 0%, #FF7433 58%, #E05A22 100%);
   --gradient-pastel: linear-gradient(135deg, #141920 0%, #1A1F26 50%, #1F252A 100%);
 }
 

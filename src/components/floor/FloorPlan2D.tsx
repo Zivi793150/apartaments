@@ -1,15 +1,39 @@
 "use client";
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
 
 export default function FloorPlan2D({ building, floor, view = "2d" as "2d"|"3d" }: { building: string; floor: number; view?: "2d"|"3d" }) {
-  const imageSrc = useMemo(() => {
-    // По требованию используем arch-1 для 2D и plan-3d-2 для 3D
-    if (view === "3d") return "/images/plan-3d-2.jpg";
-    return "/images/arch-1.jpg";
-  }, [view]);
+  // Унифицированный резолвер путей в public/plans с гибкими форматами
+  const candidates = useMemo(() => {
+    const b = (building || "").toString().toLowerCase();
+    const f = floor.toString();
+    const v = view.toLowerCase();
+    // Популярные соглашения об именовании
+    const bases = [
+      `/plans/${b}/floor-${f}-${v}`,
+      `/plans/${b}/${f}-${v}`,
+      `/plans/${b}/${f}_${v}`,
+      `/plans/${b}/${v}-${f}`,
+      `/plans/${b}/${f}`,
+      `/plans/floor-${f}-${v}`,
+      `/plans/floor-${f}`,
+    ];
+    const exts = [".webp", ".jpg", ".jpeg", ".png"];
+    const list: string[] = [];
+    bases.forEach(base => exts.forEach(ext => list.push(`${base}${ext}`)));
+    // Финальные фоллбеки
+    list.push(view === "3d" ? "/images/plan-3d-2.jpg" : "/images/arch-1.jpg");
+    return list;
+  }, [building, floor, view]);
+
+  const [srcIndex, setSrcIndex] = useState(0);
+  const imageSrc = candidates[srcIndex] ?? candidates[candidates.length - 1];
+
+  const handleError = useCallback(() => {
+    setSrcIndex(i => Math.min(i + 1, candidates.length - 1));
+  }, [candidates.length]);
 
   // Простая демонстрационная раскладка кликабельных квартир
   const apartments = useMemo(() => Array.from({ length: 6 }).map((_, i) => ({
@@ -35,7 +59,7 @@ export default function FloorPlan2D({ building, floor, view = "2d" as "2d"|"3d" 
       </div>
       <div className="relative w-full overflow-hidden rounded-xl ring-1 ring-border">
         <div className="relative w-full h-0 pb-[45%]">
-          <Image src={imageSrc} alt="План этажа" fill className="object-cover transition-transform duration-500" sizes="100vw" />
+          <Image src={imageSrc} alt="План этажа" fill className="object-cover transition-transform duration-500" sizes="100vw" onError={handleError} />
         </div>
         {/* Overlay hit boxes */}
         {apartments.map((a, i) => (
