@@ -5,24 +5,47 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 
 export default function FloorPlan2D({ building, floor, view = "2d" as "2d"|"3d" }: { building: string; floor: number; view?: "2d"|"3d" }) {
-  // Унифицированный резолвер путей в public/plans с гибкими форматами
+  // Резолвер путей для реальной структуры public/plans
   const candidates = useMemo(() => {
-    const b = (building || "").toString().toLowerCase();
     const f = floor.toString();
-    const v = view.toLowerCase();
-    // Популярные соглашения об именовании
-    const bases = [
-      `/plans/${b}/floor-${f}-${v}`,
-      `/plans/${b}/${f}-${v}`,
-      `/plans/${b}/${f}_${v}`,
-      `/plans/${b}/${v}-${f}`,
-      `/plans/${b}/${f}`,
-      `/plans/floor-${f}-${v}`,
-      `/plans/floor-${f}`,
-    ];
-    const exts = [".webp", ".jpg", ".jpeg", ".png"];
+    const isParking = floor === -1;
     const list: string[] = [];
-    bases.forEach(base => exts.forEach(ext => list.push(`${base}${ext}`)));
+    
+    if (view === "2d") {
+      // Для 2D вида: ищем "квартири" или просто "поверх"
+      if (isParking) {
+        // Парковка: -1 поверх/-1 паркінг.png
+        list.push(`/plans/Плани 3д/-1 поверх/-1 паркінг.png`);
+        list.push(`/plans/Плани 3д/-1 поверх/-1 парковка.png`);
+        list.push(`/plans/Плани 3д/-1 поверх/-1 паркінг.jpg`);
+      } else {
+        // Обычные этажи: ищем "пов. квартири" или "поверх"
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов. квартири.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов. квартиры.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} поверх.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов. квартири.jpg`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов. квартиры.jpg`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} поверх.jpg`);
+      }
+    } else {
+      // Для 3D вида: ищем "зверху" или "сверху"
+      if (isParking) {
+        list.push(`/plans/Плани 3д/-1 поверх/-1 паркінг зверху.png`);
+        list.push(`/plans/Плани 3д/-1 поверх/-1 парковка сверху.png`);
+        list.push(`/plans/Плани 3д/-1 поверх/-1 паркінг зверху.jpg`);
+      } else {
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов.зверху.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов. зверху.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} поверх зверху.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов.сверху.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов. сверху.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} поверх сверху.png`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов.зверху.jpg`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} пов. зверху.jpg`);
+        list.push(`/plans/Плани 3д/${f} поверх/${f} поверх зверху.jpg`);
+      }
+    }
+    
     // Финальные фоллбеки
     list.push(view === "3d" ? "/images/plan-3d-2.jpg" : "/images/arch-1.jpg");
     return list;
