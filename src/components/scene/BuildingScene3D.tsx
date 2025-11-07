@@ -381,7 +381,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 
       <Canvas
         shadows
-        camera={{ position: isMobile ? [2, 3, 6] as any : [3, 3, 7] as any, fov: isMobile ? 50 : 45 }}
+        camera={{ position: isMobile ? [1, 2, 4] as any : [2, 2.5, 5] as any, fov: isMobile ? 55 : 50 }}
         dpr={[1, 2]}
         onPointerMissed={() => { setHovered(null); }}
       >
@@ -413,7 +413,7 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         <LoadedBuilding 
           modelPath="/models/building.glb" 
           position={[0, 0, 0]} 
-          scale={4}
+          scale={6}
           activeBuilding={filter.activeBuilding}
           filter={filter}
         />
@@ -431,8 +431,8 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
           dampingFactor={0.05}
           maxPolarAngle={Math.PI/2.2}
           minPolarAngle={Math.PI/3}
-          minDistance={isMobile ? 4 : 3}
-          maxDistance={isMobile ? 5 : 4}
+          minDistance={isMobile ? 3 : 2}
+          maxDistance={isMobile ? 4 : 3}
           autoRotate={false}
         />
       </Canvas>
@@ -458,11 +458,11 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
 function CameraLerp({ targetXRef, isMobile }: { targetXRef: React.MutableRefObject<number>; isMobile: boolean }) {
   const { camera } = useThree();
   const controls = (CameraLerp as any).controlsRef as any | undefined;
-  const targetDistance = React.useRef<number>(isMobile ? 4 : 3); // Fixed target distance
+  const targetDistance = React.useRef<number>(isMobile ? 3 : 2.5); // Fixed target distance
   
   // Обновляем targetDistance при изменении isMobile
   React.useEffect(() => {
-    targetDistance.current = isMobile ? 4 : 3;
+    targetDistance.current = isMobile ? 3 : 2.5;
   }, [isMobile]);
   
   useFrame(() => {
@@ -508,6 +508,15 @@ function LoadedBuilding({
   const { scene } = useGLTF(modelPath);
   const clonedScene = React.useMemo(() => {
     const clone = scene.clone();
+    
+    // Вычисляем bounding box для центрирования модели
+    const box = new Box3().setFromObject(clone);
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    
+    // Центрируем модель, перемещая её так, чтобы центр был в (0,0,0)
+    clone.position.sub(center);
+    
     // Настраиваем материалы для лучшего отображения
     clone.traverse((child) => {
       if (child instanceof Mesh && child.material) {
