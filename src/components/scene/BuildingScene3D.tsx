@@ -113,13 +113,63 @@ function ApartmentBox({
   );
 }
 
+// Environment - surrounding buildings and street
+function Environment() {
+  return (
+    <group>
+      {/* Street/ground plane - grey cobblestone */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]} receiveShadow>
+        <planeGeometry args={[60, 60]} />
+        <meshStandardMaterial color="#d0d0d0" roughness={0.9} metalness={0.05} />
+      </mesh>
+      
+      {/* Background buildings - simplified blocks on hillside */}
+      {Array.from({ length: 8 }).map((_, i) => {
+        const angle = (i / 8) * Math.PI * 2;
+        const distance = 15 + Math.random() * 5;
+        const x = Math.cos(angle) * distance;
+        const z = Math.sin(angle) * distance + 8;
+        const height = 2 + Math.random() * 3;
+        const width = 1.5 + Math.random() * 1.5;
+        return (
+          <mesh key={`bg-building-${i}`} position={[x, height/2 - 0.8, z]} castShadow receiveShadow>
+            <boxGeometry args={[width, height, width]} />
+            <meshStandardMaterial color="#e8e0d6" roughness={0.8} metalness={0.05} />
+          </mesh>
+        );
+      })}
+      
+      {/* Traditional building on the left - with red tile roof */}
+      <group position={[-8, 0, 2]}>
+        {/* Main structure */}
+        <mesh position={[0, 1.2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[3, 2.4, 3]} />
+          <meshStandardMaterial color="#f5f0e8" roughness={0.7} metalness={0.05} />
+        </mesh>
+        {/* Red tile roof */}
+        <mesh position={[0, 2.6, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+          <boxGeometry args={[4.5, 0.3, 4.5]} />
+          <meshStandardMaterial color="#b85450" roughness={0.9} metalness={0.1} />
+        </mesh>
+        {/* Small balconies */}
+        {[0.5, -0.5].map((x, i) => (
+          <mesh key={`balcony-${i}`} position={[x, 1.8, 1.6]} castShadow>
+            <boxGeometry args={[0.8, 0.3, 0.3]} />
+            <meshStandardMaterial color="#2a2d35" roughness={0.6} metalness={0.3} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
 function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit }: { kind: BuildingKind; offsetX: number; withParking: boolean; filter: SceneFilter; onHoverUnit: (u: any | null, world?: Vector3) => void; onPickUnit: (u: any, world?: Vector3) => void }) {
   const units = React.useMemo(() => generateUnits(kind), [kind]);
   const width = UNITS_PER_FLOOR * 1.1 + 0.6;
   const height = FLOORS * 0.7 + 0.6;
   const isActive = (filter.activeBuilding === kind);
-  const TERRACE_DEPTH = 0.15; // Consistent terrace depth for all floors
-  const STEP_BACK = 0.06; // How much each floor steps back
+  const TERRACE_DEPTH = 0.12; // Consistent terrace depth
+  const STEP_BACK = 0.05; // Uniform step back per floor
 
   return (
     <group position={[offsetX, 0, 0]}>
@@ -131,29 +181,31 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
         </mesh>
       )}
       
-      {/* Ground level base - darker block */}
-      <mesh position={[0, -height/2 + 0.15, 0.05]} castShadow receiveShadow>
-        <boxGeometry args={[width, 0.3, 0.3]} />
-        <meshStandardMaterial color="#9a8f7f" roughness={0.8} metalness={0.05} />
-      </mesh>
+      {/* Ground level base - darker block (parking level for building A) */}
+      {withParking && (
+        <mesh position={[0, -height/2 + 0.15, 0.05]} castShadow receiveShadow>
+          <boxGeometry args={[width, 0.3, 0.4]} />
+          <meshStandardMaterial color="#9a8f7f" roughness={0.8} metalness={0.05} />
+        </mesh>
+      )}
       
-      {/* Main facade walls for each floor - light beige/brown */}
+      {/* Main facade - each floor as a stepped-back block */}
       {Array.from({ length: FLOORS }).map((_, floorIdx) => {
         const floorNum = floorIdx + 1;
         const floorY = (-height/2) + 0.3 + floorIdx * 0.7;
         const stepBack = floorIdx * STEP_BACK;
         const floorHeight = 0.65;
-        const floorWidth = width; // Same width for all floors
+        const floorWidth = width;
         
         return (
           <group key={`floor-${floorNum}`}>
-            {/* Floor wall section */}
+            {/* Floor wall block - light beige, recessed */}
             <mesh 
               position={[0, floorY + floorHeight/2, stepBack]} 
               castShadow 
               receiveShadow
             >
-              <boxGeometry args={[floorWidth, floorHeight, 0.25]} />
+              <boxGeometry args={[floorWidth, floorHeight, 0.2]} />
               <meshStandardMaterial 
                 color="#d4c4a8" 
                 roughness={0.7} 
@@ -161,47 +213,47 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
               />
             </mesh>
             
-            {/* Horizontal floor divider - light grey band */}
-            <mesh position={[0, floorY, stepBack + 0.125]} castShadow>
-              <boxGeometry args={[floorWidth, 0.02, 0.01]} />
+            {/* Horizontal floor divider - light grey band at bottom of each floor */}
+            <mesh position={[0, floorY, stepBack + 0.1]} castShadow>
+              <boxGeometry args={[floorWidth, 0.015, 0.01]} />
               <meshStandardMaterial color="#d0d5db" roughness={0.8} metalness={0.1} />
             </mesh>
             
-            {/* Terrace floor - light grey, extends forward */}
-            <mesh position={[0, floorY, stepBack + TERRACE_DEPTH + 0.125]} castShadow receiveShadow>
-              <boxGeometry args={[floorWidth - 0.1, 0.03, TERRACE_DEPTH]} />
+            {/* Terrace floor - light grey, extends forward from wall */}
+            <mesh position={[0, floorY, stepBack + TERRACE_DEPTH + 0.1]} castShadow receiveShadow>
+              <boxGeometry args={[floorWidth - 0.08, 0.025, TERRACE_DEPTH]} />
               <meshStandardMaterial color="#e8e8e8" roughness={0.6} metalness={0.05} />
             </mesh>
             
-            {/* Terrace railing - dark posts and top rail */}
+            {/* Terrace railing */}
             {/* Top horizontal rail */}
-            <mesh position={[0, floorY + 0.05, stepBack + TERRACE_DEPTH + 0.125 + 0.08]} castShadow>
-              <boxGeometry args={[floorWidth - 0.1, 0.008, 0.008]} />
+            <mesh position={[0, floorY + 0.04, stepBack + TERRACE_DEPTH + 0.1 + 0.07]} castShadow>
+              <boxGeometry args={[floorWidth - 0.08, 0.006, 0.006]} />
               <meshStandardMaterial color="#2a2d35" metalness={0.7} roughness={0.3} />
             </mesh>
             
             {/* Vertical railing posts */}
             {Array.from({ length: UNITS_PER_FLOOR + 1 }).map((_, i) => {
-              const postX = (-floorWidth/2) + 0.05 + i * (floorWidth - 0.1) / UNITS_PER_FLOOR;
+              const postX = (-floorWidth/2) + 0.04 + i * (floorWidth - 0.08) / UNITS_PER_FLOOR;
               return (
                 <mesh 
                   key={`post-${floorNum}-${i}`} 
-                  position={[postX, floorY + 0.02, stepBack + TERRACE_DEPTH + 0.125 + 0.08]} 
+                  position={[postX, floorY + 0.02, stepBack + TERRACE_DEPTH + 0.1 + 0.07]} 
                   castShadow
                 >
-                  <boxGeometry args={[0.008, 0.06, 0.008]} />
+                  <boxGeometry args={[0.006, 0.05, 0.006]} />
                   <meshStandardMaterial color="#2a2d35" metalness={0.7} roughness={0.3} />
                 </mesh>
               );
             })}
             
             {/* Glass panels between posts */}
-            <mesh position={[0, floorY + 0.02, stepBack + TERRACE_DEPTH + 0.125 + 0.08]}>
-              <boxGeometry args={[floorWidth - 0.1, 0.06, 0.002]} />
+            <mesh position={[0, floorY + 0.02, stepBack + TERRACE_DEPTH + 0.1 + 0.07]}>
+              <boxGeometry args={[floorWidth - 0.08, 0.05, 0.001]} />
               <meshStandardMaterial 
                 color="#87CEEB" 
                 transparent 
-                opacity={0.2} 
+                opacity={0.15} 
                 metalness={0.9} 
                 roughness={0.1} 
               />
@@ -210,23 +262,23 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
         );
       })}
       
-      {/* Vertical structural elements - light grey at corners and between units */}
+      {/* Vertical structural elements - light grey lines */}
       {/* Left edge */}
-      <mesh position={[-width/2, 0, 0.1]} castShadow>
-        <boxGeometry args={[0.015, height, 0.015]} />
+      <mesh position={[-width/2, 0, 0.08]} castShadow>
+        <boxGeometry args={[0.012, height, 0.012]} />
         <meshStandardMaterial color="#c3c9cf" roughness={0.8} metalness={0.1} />
       </mesh>
       {/* Right edge */}
-      <mesh position={[width/2, 0, 0.1]} castShadow>
-        <boxGeometry args={[0.015, height, 0.015]} />
+      <mesh position={[width/2, 0, 0.08]} castShadow>
+        <boxGeometry args={[0.012, height, 0.012]} />
         <meshStandardMaterial color="#c3c9cf" roughness={0.8} metalness={0.1} />
       </mesh>
       {/* Between units */}
       {Array.from({ length: UNITS_PER_FLOOR - 1 }).map((_, i) => {
         const unitX = (-width/2) + 0.8 + (i + 1) * 1.1;
         return (
-          <mesh key={`divider-${i}`} position={[unitX, 0, 0.1]} castShadow>
-            <boxGeometry args={[0.01, height, 0.01]} />
+          <mesh key={`divider-${i}`} position={[unitX, 0, 0.08]} castShadow>
+            <boxGeometry args={[0.008, height, 0.008]} />
             <meshStandardMaterial color="#c3c9cf" roughness={0.8} metalness={0.1} />
           </mesh>
         );
@@ -244,7 +296,7 @@ function Building({ kind, offsetX, withParking, filter, onHoverUnit, onPickUnit 
           (!filter.hoverFloor || u.floor === filter.hoverFloor)
         );
         return (
-          <ApartmentBox key={u.id} kind={kind} unit={u} position={[x, y, stepBack + 0.125]} dimmed={!matches} onHover={onHoverUnit} onPick={onPickUnit} />
+          <ApartmentBox key={u.id} kind={kind} unit={u} position={[x, y, stepBack + 0.1]} dimmed={!matches} onHover={onHoverUnit} onPick={onPickUnit} />
         );
       })}
     </group>
@@ -296,12 +348,12 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
   }, [isMobile]);
 
   // smooth focus to active building (A/B/All) - starts on A
-  const targetXRef = React.useRef<number>(-3.6); // Initialize on building A
+  const targetXRef = React.useRef<number>(0); // Initialize on building A (centered)
   React.useEffect(() => {
     // центры зданий соответствуют offsetX для левого/правого корпусов
-    if (filter.activeBuilding === "a") targetXRef.current = -3.6;
-    else if (filter.activeBuilding === "b") targetXRef.current = 3.6;
-    else targetXRef.current = 0; // центр
+    if (filter.activeBuilding === "a") targetXRef.current = 0;
+    else if (filter.activeBuilding === "b") targetXRef.current = 7.2;
+    else targetXRef.current = 3.6; // центр между зданиями
   }, [filter.activeBuilding]);
 
   // Drag handle for mobile to resize scene height
@@ -423,12 +475,17 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
         <directionalLight position={[-4, 4, -4]} intensity={0.4} />
         {/* Rim light for depth */}
         <pointLight position={[0, 8, -8]} intensity={0.3} distance={20} />
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]} receiveShadow>
-          <planeGeometry args={[40, 40]} />
-          <meshStandardMaterial color="#ece7e2" roughness={0.95} />
-        </mesh>
-        <Building kind="a" withParking offsetX={-3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
-        <Building kind="b" withParking={false} offsetX={3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
+        {/* Environment - street and surrounding buildings */}
+        <Environment />
+        
+        {/* Main building - only show building A if filter is set to A or all */}
+        {(filter.activeBuilding === "a" || filter.activeBuilding === "all") && (
+          <Building kind="a" withParking={true} offsetX={0} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
+        )}
+        {/* Building B - only show if filter is set to B or all */}
+        {(filter.activeBuilding === "b" || filter.activeBuilding === "all") && (
+          <Building kind="b" withParking={false} offsetX={7.2} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
+        )}
         <ProjectorInside hovered={hovered} onProject={(pt)=>setScreenPos(pt)} />
         <OrbitControls
           ref={(ctrl:any)=>{(CameraLerp as any).controlsRef=ctrl}}
