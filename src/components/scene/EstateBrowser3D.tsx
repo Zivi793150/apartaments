@@ -13,55 +13,6 @@ function parseId(id: string) {
   return { building: parts[0] ?? "", floor: parts[1] ?? "", unit: parts[2] ?? "" };
 }
 
-// Резолвер пути к плану из public/plans с fallback
-function getPlanImagePath(building: string, floor: string | number): string[] {
-  const f = floor.toString();
-  return [
-    `/plans/Плани 3д/${f} поверх/${f} пов. квартири.png`,
-    `/plans/Плани 3д/${f} поверх/${f} пов. квартиры.png`,
-    `/plans/Плани 3д/${f} поверх/${f} поверх.png`,
-    `/plans/Плани 3д/${f} поверх/${f} пов. квартири.jpg`,
-    `/plans/Плани 3д/${f} поверх/${f} пов. квартиры.jpg`,
-    `/plans/Плани 3д/${f} поверх/${f} поверх.jpg`,
-    `/images/plan-3d-1.jpg`, // Финальный fallback
-  ];
-}
-
-// Компонент для отображения плана с автоматическим fallback
-function PlanImage({ building, floor, onClick }: { building: string; floor: string; onClick: () => void }) {
-  const [srcIndex, setSrcIndex] = React.useState(0);
-  const candidates = React.useMemo(() => getPlanImagePath(building, floor), [building, floor]);
-  const imageSrc = candidates[srcIndex] ?? candidates[candidates.length - 1];
-
-  const handleError = React.useCallback(() => {
-    setSrcIndex(i => Math.min(i + 1, candidates.length - 1));
-  }, [candidates.length]);
-
-  return (
-    <div className="relative w-full h-40 md:h-56 rounded-xl overflow-hidden ring-1 ring-border group cursor-pointer"
-      onClick={onClick}
-    >
-      <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-transparent to-transparent pointer-events-none z-10" />
-      <img 
-        src={imageSrc} 
-        alt="План" 
-        className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
-        onError={handleError}
-      />
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center z-20">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          whileHover={{ scale: 1 }}
-          className="hidden md:group-hover:flex items-center gap-2 text-white bg-white/20 backdrop-blur rounded-full px-4 py-2 text-sm font-medium"
-        >
-          <Maximize2 className="w-4 h-4" />
-          Быстрый просмотр
-        </motion.div>
-      </div>
-    </div>
-  );
-}
-
 export default function EstateBrowser3D() {
   const [filter, setFilter] = useState<SceneFilter>({ activeBuilding: "a", rooms: null, onlyAvailable: false, hoverFloor: null });
   const [picked, setPicked] = useState<PickedUnit>(null);
@@ -264,11 +215,22 @@ export default function EstateBrowser3D() {
 
               <div className="grid md:grid-cols-2 gap-3 md:gap-4 mb-3 md:mb-4">
                 {/* План - на мобильных упрощенный */}
-                <PlanImage 
-                  building={parseId(picked.id).building} 
-                  floor={parseId(picked.id).floor}
+                <div className="relative w-full h-40 md:h-56 rounded-xl overflow-hidden ring-1 ring-border group cursor-pointer"
                   onClick={() => setShowQuickView(true)}
-                />
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-transparent to-transparent pointer-events-none z-10" />
+                  <img src="/images/plan-3d-1.jpg" alt="План" className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center z-20">
+                    <motion.div
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      whileHover={{ scale: 1 }}
+                      className="hidden md:group-hover:flex items-center gap-2 text-white bg-white/20 backdrop-blur rounded-full px-4 py-2 text-sm font-medium"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                      Быстрый просмотр
+                    </motion.div>
+                  </div>
+                </div>
                 {/* Характеристики - упрощенные на мобильных */}
                 <div className="space-y-2 md:space-y-3">
                   <div className="grid grid-cols-2 gap-2 md:gap-3">
@@ -384,14 +346,6 @@ function QuickViewModal({
   onClose: () => void;
 }) {
   const visuals = ["/images/arch-3.jpg", "/images/arch-2.jpg", "/images/arch-1.jpg"];
-  const p = parseId(apartment.id);
-  const [planSrcIndex, setPlanSrcIndex] = React.useState(0);
-  const planCandidates = React.useMemo(() => getPlanImagePath(p.building, p.floor), [p.building, p.floor]);
-  const planSrc = planCandidates[planSrcIndex] ?? planCandidates[planCandidates.length - 1];
-
-  const handlePlanError = React.useCallback(() => {
-    setPlanSrcIndex(i => Math.min(i + 1, planCandidates.length - 1));
-  }, [planCandidates.length]);
 
   return (
     <>
@@ -443,7 +397,7 @@ function QuickViewModal({
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             <div className="space-y-4">
               <div className="relative w-full h-64 rounded-xl overflow-hidden ring-1 ring-border">
-                <img src={planSrc} alt="План" className="absolute inset-0 w-full h-full object-cover" onError={handlePlanError} />
+                <img src="/images/plan-3d-1.jpg" alt="План" className="absolute inset-0 w-full h-full object-cover" />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 {visuals.map((src, i) => (
