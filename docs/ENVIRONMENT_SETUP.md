@@ -38,40 +38,11 @@ import StreetViewEnvironment, { getGoogleStreetViewUrl } from "@/components/scen
 - [Poly Haven](https://polyhaven.com/hdris) - бесплатные HDR панорамы
 - [Sketchfab](https://sketchfab.com/) - 3D модели и панорамы
 
-## Вариант 2: Mapbox 3D карты
+## Вариант 2: Mapbox 3D карты (Альтернатива)
 
-1. Зарегистрируйтесь на [mapbox.com](https://www.mapbox.com/)
-2. Получите токен доступа
-3. Установите зависимости:
+Mapbox можно использовать как альтернативу Google Street View, но требует установки дополнительных зависимостей.
 
-```bash
-npm install mapbox-gl
-```
-
-4. Добавьте стили в `app/layout.tsx`:
-
-```tsx
-import 'mapbox-gl/dist/mapbox-gl.css';
-```
-
-5. Используйте компонент:
-
-```tsx
-import MapboxEnvironment from "@/components/scene/MapboxEnvironment";
-
-<MapboxEnvironment
-  mapboxToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN!}
-  lat={50.4501}
-  lng={30.5234}
-  zoom={18}
-  pitch={60}
-/>
-```
-
-**Преимущества:**
-- Реальные 3D здания из OpenStreetMap
-- Интерактивная карта
-- Автоматическое обновление данных
+**Примечание:** Для использования Mapbox нужно установить `mapbox-gl` и создать собственный компонент интеграции. Основной функционал работает с Google Street View API.
 
 ## Вариант 3: Готовые 3D модели окружения
 

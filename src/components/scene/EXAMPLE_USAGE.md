@@ -93,45 +93,14 @@ HDR можно использовать напрямую, но для прост
 
 ## Использование Mapbox (альтернатива)
 
-### 1. Установите зависимости
+Mapbox можно использовать как альтернативу, но требует установки `mapbox-gl` и создания собственного компонента интеграции. 
 
-```bash
-npm install mapbox-gl
-```
-
-### 2. Добавьте стили
-
-В `src/app/layout.tsx`:
-
-```tsx
-import 'mapbox-gl/dist/mapbox-gl.css';
-```
-
-### 3. Получите токен на mapbox.com
-
-### 4. Используйте компонент
-
-```tsx
-import MapboxEnvironment from "@/components/scene/MapboxEnvironment";
-
-// В вашем компоненте:
-<div className="relative">
-  <MapboxEnvironment
-    mapboxToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN!}
-    lat={50.4501}
-    lng={30.5234}
-    zoom={18}
-    pitch={60}
-  />
-  {/* Ваша 3D сцена поверх карты */}
-  <BuildingScene3D filter={filter} onPick={setPicked} />
-</div>
-```
+**Рекомендуется использовать Google Street View API** (Вариант 1), так как он уже интегрирован и не требует дополнительных зависимостей.
 
 ## Динамическое переключение между видами
 
 ```tsx
-const [viewMode, setViewMode] = useState<"default" | "streetview" | "mapbox">("default");
+const [viewMode, setViewMode] = useState<"default" | "streetview">("default");
 
 const panoramaUrl = viewMode === "streetview" 
   ? getGoogleStreetViewUrl(lat, lng, apiKey)
@@ -142,19 +111,14 @@ return (
     <div className="flex gap-2 mb-4">
       <button onClick={() => setViewMode("default")}>Стандартный вид</button>
       <button onClick={() => setViewMode("streetview")}>Street View</button>
-      <button onClick={() => setViewMode("mapbox")}>Mapbox</button>
     </div>
     
-    {viewMode === "mapbox" ? (
-      <MapboxEnvironment mapboxToken={token} lat={lat} lng={lng} />
-    ) : (
-      <BuildingScene3D
-        filter={filter}
-        onPick={setPicked}
-        panoramaUrl={panoramaUrl}
-        useStreetView={viewMode === "streetview"}
-      />
-    )}
+    <BuildingScene3D
+      filter={filter}
+      onPick={setPicked}
+      panoramaUrl={panoramaUrl}
+      useStreetView={viewMode === "streetview"}
+    />
   </>
 );
 ```
@@ -162,9 +126,8 @@ return (
 ## Важные замечания
 
 1. **Google Street View API** имеет лимиты запросов (бесплатно: 28,000 запросов/месяц)
-2. **Mapbox** имеет бесплатный тариф до 50,000 запросов/месяц
-3. **Собственные панорамы** - без ограничений, но требуют съемки
-4. **Poly Haven** - полностью бесплатно, но нужно скачать файлы
+2. **Собственные панорамы** - без ограничений, но требуют съемки
+3. **Poly Haven** - полностью бесплатно, но нужно скачать файлы
 
 ## Оптимизация производительности
 
