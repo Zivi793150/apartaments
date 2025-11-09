@@ -1,12 +1,15 @@
 "use client";
-import React, { useRef, useState, useEffect, useMemo } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import BuildingScene3D, { type SceneFilter, type PickedUnit } from "./BuildingScene3D";
 import BuildingHotspots from "./BuildingHotspots";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, X, ExternalLink, Maximize2 } from "lucide-react";
 import { useFavorites, type FavoriteApartment } from "@/components/sections/FavoritesBar";
 import Link from "next/link";
-import { getGoogleStreetViewUrl } from "./StreetViewEnvironment";
+import { 
+  getPolyHavenHDRIUrl, 
+  POLYHAVEN_CITY_HDRI 
+} from "./PolyHavenEnvironment";
 
 function parseId(id: string) {
   // формат: A-4-3 => {building:'A', floor:'4', unit:'3'}
@@ -21,29 +24,10 @@ export default function EstateBrowser3D() {
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
   const set = (patch: Partial<SceneFilter>) => setFilter(prev => ({ ...prev, ...patch }));
 
-  // Координаты здания: Camino de Velas 15, Algarrobo, Spain
-  // Приблизительные координаты для Algarrobo: 36.7731°N, 4.0500°W
-  // Для точных координат используйте Geocoding API или Google Maps
-  const buildingLat = 36.7731;
-  const buildingLng = -4.0500;
-  
-  // Генерируем URL панорамы Google Street View с максимальным разрешением
-  const panoramaUrl = useMemo(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      console.warn("Google Maps API key not found. Street View will not work.");
-      return undefined;
-    }
-    // Используем максимальное разрешение для лучшего качества
-    // Для платного API можно использовать до 640x640, для некоторых ключей доступно больше
-    return getGoogleStreetViewUrl(
-      buildingLat,
-      buildingLng,
-      apiKey,
-      "640x640", // Максимальное разрешение для бесплатного API
-      120 // Максимальный FOV для широкого обзора
-    );
-  }, [buildingLat, buildingLng]);
+  // Poly Haven HDRI - используем городскую улицу
+  // Можно использовать локальный файл: "/hdris/city_street_4k.hdr"
+  // Или CDN: getPolyHavenHDRIUrl(POLYHAVEN_CITY_HDRI.cityStreet, "4k")
+  const hdriUrl = getPolyHavenHDRIUrl(POLYHAVEN_CITY_HDRI.cityStreet, "4k");
 
   const buildingTabs = [{ k: "a", t: "Корпус A" }, { k: "b", t: "Корпус B" }] as const;
 
@@ -168,8 +152,9 @@ export default function EstateBrowser3D() {
         <BuildingScene3D 
           filter={filter} 
           onPick={setPicked}
-          panoramaUrl={panoramaUrl}
-          useStreetView={!!panoramaUrl}
+          hdriUrl={hdriUrl}
+          usePolyHaven={true}
+          hdriIntensity={1.0}
         />
         
         {/* Animated hotspots/hints */}

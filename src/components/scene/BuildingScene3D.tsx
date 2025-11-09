@@ -6,6 +6,7 @@ import { Vector3 } from "three";
 import { useFrame } from "@react-three/fiber";
 import { motion } from "framer-motion";
 import StreetViewEnvironment from "./StreetViewEnvironment";
+import PolyHavenEnvironment from "./PolyHavenEnvironment";
 
 export type PickedUnit = { id: string; area: number; rooms: number } | null;
 
@@ -236,20 +237,42 @@ export type SceneFilter = {
   hoverFloor?: number | null;
 };
 
-// ProjectorInside удален - больше не нужен без 3D моделей
+function ProjectorInside({ hovered, onProject }: { hovered: any | null; onProject: (pt: {x:number;y:number}|null) => void }) {
+  const { size, camera } = useThree();
+  React.useEffect(() => {
+    if (hovered && hovered.worldPosition instanceof Vector3) {
+      const v = hovered.worldPosition.clone().project(camera);
+      const x = (v.x + 1) / 2 * size.width;
+      const y = (-v.y + 1) / 2 * size.height;
+      onProject({ x, y });
+    } else {
+      onProject(null);
+    }
+  }, [hovered, size, camera, onProject]);
+  return null;
+}
 
 export default function BuildingScene3D({ 
   filter, 
   onPick,
   panoramaUrl,
-  useStreetView = false
+  useStreetView = false,
+  hdriUrl,
+  usePolyHaven = false,
+  hdriIntensity = 1.0
 }: { 
   filter: SceneFilter; 
   onPick?: (u: PickedUnit) => void;
   panoramaUrl?: string;
   useStreetView?: boolean;
+  hdriUrl?: string;
+  usePolyHaven?: boolean;
+  hdriIntensity?: number;
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = React.useState<any | null>(null);
+  const [screenPos, setScreenPos] = React.useState<{x:number;y:number}|null>(null);
+  const [pulse, setPulse] = React.useState<{x:number;y:number}|null>(null);
   const [vh, setVh] = React.useState<number>(68);
   const [isMobile, setIsMobile] = React.useState<boolean>(false);
   const [showMobileHint, setShowMobileHint] = React.useState<boolean>(false);
@@ -267,7 +290,14 @@ export default function BuildingScene3D({
     }
   }, [isMobile]);
 
-  // targetXRef удален - больше не нужен без 3D моделей зданий
+  // smooth focus to active building (A/B/All) - starts on A
+  const targetXRef = React.useRef<number>(-3.6); // Initialize on building A
+  React.useEffect(() => {
+    // центры зданий соответствуют offsetX для левого/правого корпусов
+    if (filter.activeBuilding === "a") targetXRef.current = -3.6;
+    else if (filter.activeBuilding === "b") targetXRef.current = 3.6;
+    else targetXRef.current = 0; // центр
+  }, [filter.activeBuilding]);
 
   // Drag handle for mobile to resize scene height
   const dragRef = React.useRef<{startY:number;startVh:number}|null>(null);
@@ -341,45 +371,175 @@ export default function BuildingScene3D({
         </motion.div>
       )}
 
-      {/* Интерактивные элементы убраны - используем только панораму */}
+      {/* Hover overlay card */}
+      {hovered && screenPos && (
+        <div className="pointer-events-none absolute z-20" style={{ left: screenPos.x - 90, top: screenPos.y - 120 }}>
+          <div className="rounded-2xl bg-background/95 backdrop-blur ring-1 ring-border shadow-xl px-3 py-2 w-[180px]">
+            <div className="text-[12px] text-muted mb-0.5">Этаж {hovered.floor}</div>
+            <div className="text-[16px] font-medium">
+              {hovered.id}
+              <span className={`ml-2 inline-block size-2 rounded-full align-middle ${hovered.available?"bg-brand":"bg-muted"}`} />
+            </div>
+            <div className="text-[12px] text-muted">{hovered.area} м² · {hovered.rooms}к</div>
+          </div>
+        </div>
+      )}
+
+      {/* Click pulse feedback */}
+      {pulse && (
+        <div className="pointer-events-none absolute z-20" style={{ left: pulse.x - 10, top: pulse.y - 10 }}>
+          <div className="size-5 rounded-full bg-brand/60 animate-ping" />
+        </div>
+      )}
 
       <Canvas
-        camera={{ position: [0, 0, 0] as any, fov: 75 }}
+        shadows
+        camera={{ position: isMobile ? [6.2, 5.2, 10.5] as any : [7.2, 5.2, 11.5] as any, fov: isMobile ? 42 : 36 }}
         dpr={[1, 2]}
+        onPointerMissed={() => { setHovered(null); }}
       >
-        {/* Камера для панорамы - убрана автоматическая фокусировка */}
+        {/* Smooth camera focus on active building */}
+        <CameraLerp targetXRef={targetXRef} />
         
-        {/* Панорамное окружение Google Street View - основной фон */}
-        {useStreetView && panoramaUrl ? (
+        {/* Poly Haven HDRI окружение (приоритет) */}
+        {usePolyHaven && hdriUrl && (
+          <PolyHavenEnvironment 
+            hdriUrl={hdriUrl} 
+            intensity={hdriIntensity}
+            useAsBackground={true}
+            useAsEnvironment={true}
+          />
+        )}
+        
+        {/* Панорамное окружение Google Street View (если Poly Haven не используется) */}
+        {!usePolyHaven && useStreetView && panoramaUrl && (
           <StreetViewEnvironment panoramaUrl={panoramaUrl} />
-        ) : (
-          // Фоллбек: простое небо, если панорама недоступна
-          <color attach="background" args={[0.88, 0.92, 0.97]} />
         )}
         
-        {/* Освещение минимальное - панорама сама обеспечивает освещение */}
-        <ambientLight intensity={1.0} />
+        {/* Стандартное небо (если ни Poly Haven, ни панорама не используются) */}
+        {!usePolyHaven && !useStreetView && (
+          <>
+            <color attach="background" args={[0.88, 0.92, 0.97]} />
+            <fog attach="fog" args={["#B8D4E8", 15, 50]} />
+            <mesh>
+              <sphereGeometry args={[50, 32, 16]} />
+              <meshBasicMaterial color="#B8D4E8" side={2} />
+            </mesh>
+          </>
+        )}
         
-        {/* Минимальная прозрачная поверхность земли (только для теней от зданий) */}
-        {!useStreetView && (
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]} receiveShadow>
-            <planeGeometry args={[20, 20]} />
-            <meshStandardMaterial color="#d4d9d0" roughness={0.9} transparent opacity={0.2} />
+        {/* Enhanced lighting setup for premium look */}
+        <ambientLight intensity={0.6} />
+        <directionalLight 
+          position={[6, 8, 6]} 
+          intensity={1.2} 
+          castShadow 
+          shadow-mapSize-width={2048} 
+          shadow-mapSize-height={2048}
+          shadow-camera-left={-25}
+          shadow-camera-right={25}
+          shadow-camera-top={25}
+          shadow-camera-bottom={-25}
+        />
+        {/* Additional fill light for premium look */}
+        <directionalLight position={[-4, 4, -4]} intensity={0.5} />
+        {/* Rim light for depth */}
+        <pointLight position={[0, 8, -8]} intensity={0.4} distance={30} />
+        
+        {/* Ground/Street - расширенная поверхность */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]} receiveShadow>
+          <planeGeometry args={[80, 80]} />
+          <meshStandardMaterial color="#d4d9d0" roughness={0.9} />
+        </mesh>
+        
+        {/* Street markings */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.79, 0]} receiveShadow>
+          <planeGeometry args={[4, 80]} />
+          <meshStandardMaterial color="#9ca3a0" roughness={0.8} />
+        </mesh>
+        
+        {/* Surrounding buildings - левая сторона */}
+        <group position={[-12, 0, -5]}>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[3, 4, 3]} />
+            <meshStandardMaterial color="#c8d0d8" roughness={0.7} metalness={0.1} />
           </mesh>
-        )}
+        </group>
+        <group position={[-15, 0, 2]}>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[2.5, 3.5, 2.5]} />
+            <meshStandardMaterial color="#d0d8e0" roughness={0.7} metalness={0.1} />
+          </mesh>
+        </group>
         
-        {/* Управление камерой для панорамы - можно крутить и смотреть вокруг */}
+        {/* Surrounding buildings - правая сторона */}
+        <group position={[12, 0, -5]}>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[3, 4.5, 3]} />
+            <meshStandardMaterial color="#c8d0d8" roughness={0.7} metalness={0.1} />
+          </mesh>
+        </group>
+        <group position={[15, 0, 2]}>
+          <mesh castShadow receiveShadow>
+            <boxGeometry args={[2.5, 3.8, 2.5]} />
+            <meshStandardMaterial color="#d0d8e0" roughness={0.7} metalness={0.1} />
+          </mesh>
+        </group>
+        
+        {/* Trees - левая сторона */}
+        {Array.from({ length: 4 }).map((_, i) => (
+          <group key={`tree-l-${i}`} position={[-8 - i * 2, 0, -8 + i * 1.5]}>
+            <mesh position={[0, 1.5, 0]} castShadow>
+              <coneGeometry args={[0.8, 2, 8]} />
+              <meshStandardMaterial color="#4a7c59" roughness={0.9} />
+            </mesh>
+            <mesh position={[0, 0, 0]} castShadow receiveShadow>
+              <cylinderGeometry args={[0.1, 0.1, 1.5]} />
+              <meshStandardMaterial color="#5d4037" roughness={0.8} />
+            </mesh>
+          </group>
+        ))}
+        
+        {/* Trees - правая сторона */}
+        {Array.from({ length: 4 }).map((_, i) => (
+          <group key={`tree-r-${i}`} position={[8 + i * 2, 0, -8 + i * 1.5]}>
+            <mesh position={[0, 1.5, 0]} castShadow>
+              <coneGeometry args={[0.8, 2, 8]} />
+              <meshStandardMaterial color="#4a7c59" roughness={0.9} />
+            </mesh>
+            <mesh position={[0, 0, 0]} castShadow receiveShadow>
+              <cylinderGeometry args={[0.1, 0.1, 1.5]} />
+              <meshStandardMaterial color="#5d4037" roughness={0.8} />
+            </mesh>
+          </group>
+        ))}
+        
+        {/* Background buildings - дальний план */}
+        {Array.from({ length: 6 }).map((_, i) => (
+          <group key={`bg-${i}`} position={[-20 + i * 7, 0, -15]}>
+            <mesh castShadow receiveShadow>
+              <boxGeometry args={[2, 2 + Math.random() * 2, 2]} />
+              <meshStandardMaterial color="#b0b8c0" roughness={0.8} metalness={0.1} />
+            </mesh>
+          </group>
+        ))}
+        
+        {/* Main buildings */}
+        <Building kind="a" withParking offsetX={-3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
+        <Building kind="b" withParking={false} offsetX={3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
+        <ProjectorInside hovered={hovered} onProject={(pt)=>setScreenPos(pt)} />
         <OrbitControls
-          enablePan={false}
+          ref={(ctrl:any)=>{(CameraLerp as any).controlsRef=ctrl}}
+          enablePan={true}
           enableZoom={true}
-          zoomSpeed={0.3}
+          zoomSpeed={0.5}
           enableRotate={true}
           enableDamping={true}
-          dampingFactor={0.1}
-          maxPolarAngle={Math.PI}
+          dampingFactor={0.05}
+          maxPolarAngle={Math.PI/2.1}
           minPolarAngle={0}
-          minDistance={0.1}
-          maxDistance={2}
+          minDistance={isMobile ? 8 : 6}
+          maxDistance={isMobile ? 25 : 30}
           autoRotate={false}
           target={[0, 0, 0]}
         />
@@ -403,4 +563,19 @@ export default function BuildingScene3D({
   );
 }
 
-// CameraLerp удален - больше не нужен без 3D моделей зданий
+function CameraLerp({ targetXRef }: { targetXRef: React.MutableRefObject<number> }) {
+  const { camera } = useThree();
+  const controls = (CameraLerp as any).controlsRef as any | undefined;
+  
+  useFrame(() => {
+    if (!controls || !controls.target) return;
+    
+    // Smooth lerp target X position для фокуса на выбранном здании
+    // Но позволяем пользователю свободно панорамировать
+    const dtx = targetXRef.current - controls.target.x;
+    controls.target.x += dtx * 0.05; // Медленнее, чтобы не мешать ручному управлению
+    
+    controls.update();
+  });
+  return null;
+}

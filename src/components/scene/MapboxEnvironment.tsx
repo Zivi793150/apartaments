@@ -1,4 +1,3 @@
-// @ts-nocheck - Опциональный компонент, mapbox-gl может быть не установлен
 "use client";
 import * as React from "react";
 import { useEffect, useRef } from "react";
@@ -20,9 +19,6 @@ import { useEffect, useRef } from "react";
  *   pitch={60}
  *   bearing={0}
  * />
- * 
- * ВАЖНО: Этот компонент требует установки mapbox-gl.
- * Если пакет не установлен, компонент не будет работать, но не сломает сборку.
  */
 export default function MapboxEnvironment({
   mapboxToken,
@@ -49,72 +45,65 @@ export default function MapboxEnvironment({
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
 
-    // Динамический импорт mapbox-gl с обработкой ошибок
-    // Если пакет не установлен, компонент просто не будет работать, но не сломает сборку
-    // @ts-expect-error - mapbox-gl опциональная зависимость, может быть не установлена
-    import("mapbox-gl")
-      .then((mapboxgl) => {
-        if (!mapContainer.current) return;
+    // Динамический импорт mapbox-gl (опционально, чтобы не загружать если не используется)
+    import("mapbox-gl").then((mapboxgl) => {
+      if (!mapContainer.current) return;
 
-        (mapboxgl as any).accessToken = mapboxToken;
+      (mapboxgl as any).accessToken = mapboxToken;
 
-        const map = new (mapboxgl as any).Map({
-          container: mapContainer.current,
-          style: style,
-          center: [lng, lat],
-          zoom: zoom,
-          pitch: pitch,
-          bearing: bearing,
-          antialias: true,
-          // Включить 3D здания
-          building3D: true,
-        });
-
+      const map = new (mapboxgl as any).Map({
+        container: mapContainer.current,
+        style: style,
+        center: [lng, lat],
+        zoom: zoom,
+        pitch: pitch,
+        bearing: bearing,
+        antialias: true,
         // Включить 3D здания
-        map.on("load", () => {
-          map.addLayer({
-            id: "3d-buildings",
-            source: "composite",
-            "source-layer": "building",
-            filter: ["==", "extrude", "true"],
-            type: "fill-extrusion",
-            minzoom: 15,
-            paint: {
-              "fill-extrusion-color": "#aaa",
-              "fill-extrusion-height": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                15,
-                0,
-                15.05,
-                ["get", "height"],
-              ],
-              "fill-extrusion-base": [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                15,
-                0,
-                15.05,
-                ["get", "min_height"],
-              ],
-              "fill-extrusion-opacity": 0.6,
-            },
-          });
-        });
-
-        mapRef.current = map;
-
-        return () => {
-          map.remove();
-          mapRef.current = null;
-        };
-      })
-      .catch((error) => {
-        // Если mapbox-gl не установлен, просто игнорируем ошибку
-        console.warn("Mapbox GL not available. Install mapbox-gl to use this component:", error);
+        building3D: true,
       });
+
+      // Включить 3D здания
+      map.on("load", () => {
+        map.addLayer({
+          id: "3d-buildings",
+          source: "composite",
+          "source-layer": "building",
+          filter: ["==", "extrude", "true"],
+          type: "fill-extrusion",
+          minzoom: 15,
+          paint: {
+            "fill-extrusion-color": "#aaa",
+            "fill-extrusion-height": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              15,
+              0,
+              15.05,
+              ["get", "height"],
+            ],
+            "fill-extrusion-base": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              15,
+              0,
+              15.05,
+              ["get", "min_height"],
+            ],
+            "fill-extrusion-opacity": 0.6,
+          },
+        });
+      });
+
+      mapRef.current = map;
+
+      return () => {
+        map.remove();
+        mapRef.current = null;
+      };
+    });
   }, [mapboxToken, lat, lng, zoom, pitch, bearing, style]);
 
   return (
