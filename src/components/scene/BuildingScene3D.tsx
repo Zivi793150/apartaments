@@ -5,6 +5,7 @@ import { OrbitControls } from "@react-three/drei";
 import { Vector3 } from "three";
 import { useFrame } from "@react-three/fiber";
 import { motion } from "framer-motion";
+import StreetViewEnvironment from "./StreetViewEnvironment";
 
 export type PickedUnit = { id: string; area: number; rooms: number } | null;
 
@@ -250,7 +251,17 @@ function ProjectorInside({ hovered, onProject }: { hovered: any | null; onProjec
   return null;
 }
 
-export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilter; onPick?: (u: PickedUnit) => void }) {
+export default function BuildingScene3D({ 
+  filter, 
+  onPick,
+  panoramaUrl,
+  useStreetView = false
+}: { 
+  filter: SceneFilter; 
+  onPick?: (u: PickedUnit) => void;
+  panoramaUrl?: string;
+  useStreetView?: boolean;
+}) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = React.useState<any | null>(null);
   const [screenPos, setScreenPos] = React.useState<{x:number;y:number}|null>(null);
@@ -382,15 +393,23 @@ export default function BuildingScene3D({ filter, onPick }: { filter: SceneFilte
       >
         {/* Smooth camera focus on active building */}
         <CameraLerp targetXRef={targetXRef} />
-        {/* Sky gradient background */}
-        <color attach="background" args={[0.88, 0.92, 0.97]} />
-        {/* Atmospheric fog for depth */}
-        <fog attach="fog" args={["#B8D4E8", 15, 50]} />
-        {/* Sky dome with gradient - внутренняя сторона */}
-        <mesh>
-          <sphereGeometry args={[50, 32, 16]} />
-          <meshBasicMaterial color="#B8D4E8" side={2} />
-        </mesh>
+        
+        {/* Панорамное окружение (если включено) */}
+        {useStreetView && panoramaUrl && (
+          <StreetViewEnvironment panoramaUrl={panoramaUrl} />
+        )}
+        
+        {/* Стандартное небо (если панорама не используется) */}
+        {!useStreetView && (
+          <>
+            <color attach="background" args={[0.88, 0.92, 0.97]} />
+            <fog attach="fog" args={["#B8D4E8", 15, 50]} />
+            <mesh>
+              <sphereGeometry args={[50, 32, 16]} />
+              <meshBasicMaterial color="#B8D4E8" side={2} />
+            </mesh>
+          </>
+        )}
         
         {/* Enhanced lighting setup for premium look */}
         <ambientLight intensity={0.6} />

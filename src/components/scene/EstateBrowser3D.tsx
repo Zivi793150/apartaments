@@ -1,11 +1,12 @@
 "use client";
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import BuildingScene3D, { type SceneFilter, type PickedUnit } from "./BuildingScene3D";
 import BuildingHotspots from "./BuildingHotspots";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, X, ExternalLink, Maximize2 } from "lucide-react";
 import { useFavorites, type FavoriteApartment } from "@/components/sections/FavoritesBar";
 import Link from "next/link";
+import { getGoogleStreetViewUrl } from "./StreetViewEnvironment";
 
 function parseId(id: string) {
   // формат: A-4-3 => {building:'A', floor:'4', unit:'3'}
@@ -19,6 +20,29 @@ export default function EstateBrowser3D() {
   const [showQuickView, setShowQuickView] = useState(false);
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
   const set = (patch: Partial<SceneFilter>) => setFilter(prev => ({ ...prev, ...patch }));
+
+  // Координаты здания: 36°46'23"N 4°02'20"W
+  // Конвертировано в десятичные градусы:
+  // Широта: 36 + 46/60 + 23/3600 = 36.7731°
+  // Долгота: -(4 + 2/60 + 20/3600) = -4.0389° (западная = отрицательная)
+  const buildingLat = 36.7731;
+  const buildingLng = -4.0389;
+  
+  // Генерируем URL панорамы Google Street View
+  const panoramaUrl = useMemo(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      console.warn("Google Maps API key not found. Street View will not work.");
+      return undefined;
+    }
+    return getGoogleStreetViewUrl(
+      buildingLat,
+      buildingLng,
+      apiKey,
+      "2048x1024",
+      90 // FOV для широкого обзора
+    );
+  }, [buildingLat, buildingLng]);
 
   const buildingTabs = [{ k: "a", t: "Корпус A" }, { k: "b", t: "Корпус B" }] as const;
 
@@ -140,7 +164,12 @@ export default function EstateBrowser3D() {
           </motion.button>
         </motion.div>
 
-        <BuildingScene3D filter={filter} onPick={setPicked} />
+        <BuildingScene3D 
+          filter={filter} 
+          onPick={setPicked}
+          panoramaUrl={panoramaUrl}
+          useStreetView={!!panoramaUrl}
+        />
         
         {/* Animated hotspots/hints */}
         <BuildingHotspots 
