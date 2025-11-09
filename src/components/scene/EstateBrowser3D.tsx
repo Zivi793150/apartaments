@@ -21,26 +21,27 @@ export default function EstateBrowser3D() {
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
   const set = (patch: Partial<SceneFilter>) => setFilter(prev => ({ ...prev, ...patch }));
 
-  // Координаты здания: 36°46'23"N 4°02'20"W
-  // Конвертировано в десятичные градусы:
-  // Широта: 36 + 46/60 + 23/3600 = 36.7731°
-  // Долгота: -(4 + 2/60 + 20/3600) = -4.0389° (западная = отрицательная)
+  // Координаты здания: Camino de Velas 15, Algarrobo, Spain
+  // Приблизительные координаты для Algarrobo: 36.7731°N, 4.0500°W
+  // Для точных координат используйте Geocoding API или Google Maps
   const buildingLat = 36.7731;
-  const buildingLng = -4.0389;
+  const buildingLng = -4.0500;
   
-  // Генерируем URL панорамы Google Street View
+  // Генерируем URL панорамы Google Street View с максимальным разрешением
   const panoramaUrl = useMemo(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
       console.warn("Google Maps API key not found. Street View will not work.");
       return undefined;
     }
+    // Используем максимальное разрешение для лучшего качества
+    // Для платного API можно использовать до 640x640, для некоторых ключей доступно больше
     return getGoogleStreetViewUrl(
       buildingLat,
       buildingLng,
       apiKey,
-      "2048x1024",
-      90 // FOV для широкого обзора
+      "640x640", // Максимальное разрешение для бесплатного API
+      120 // Максимальный FOV для широкого обзора
     );
   }, [buildingLat, buildingLng]);
 

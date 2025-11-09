@@ -236,20 +236,7 @@ export type SceneFilter = {
   hoverFloor?: number | null;
 };
 
-function ProjectorInside({ hovered, onProject }: { hovered: any | null; onProject: (pt: {x:number;y:number}|null) => void }) {
-  const { size, camera } = useThree();
-  React.useEffect(() => {
-    if (hovered && hovered.worldPosition instanceof Vector3) {
-      const v = hovered.worldPosition.clone().project(camera);
-      const x = (v.x + 1) / 2 * size.width;
-      const y = (-v.y + 1) / 2 * size.height;
-      onProject({ x, y });
-    } else {
-      onProject(null);
-    }
-  }, [hovered, size, camera, onProject]);
-  return null;
-}
+// ProjectorInside удален - больше не нужен без 3D моделей
 
 export default function BuildingScene3D({ 
   filter, 
@@ -263,9 +250,6 @@ export default function BuildingScene3D({
   useStreetView?: boolean;
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [hovered, setHovered] = React.useState<any | null>(null);
-  const [screenPos, setScreenPos] = React.useState<{x:number;y:number}|null>(null);
-  const [pulse, setPulse] = React.useState<{x:number;y:number}|null>(null);
   const [vh, setVh] = React.useState<number>(68);
   const [isMobile, setIsMobile] = React.useState<boolean>(false);
   const [showMobileHint, setShowMobileHint] = React.useState<boolean>(false);
@@ -283,14 +267,7 @@ export default function BuildingScene3D({
     }
   }, [isMobile]);
 
-  // smooth focus to active building (A/B/All) - starts on A
-  const targetXRef = React.useRef<number>(-3.6); // Initialize on building A
-  React.useEffect(() => {
-    // центры зданий соответствуют offsetX для левого/правого корпусов
-    if (filter.activeBuilding === "a") targetXRef.current = -3.6;
-    else if (filter.activeBuilding === "b") targetXRef.current = 3.6;
-    else targetXRef.current = 0; // центр
-  }, [filter.activeBuilding]);
+  // targetXRef удален - больше не нужен без 3D моделей зданий
 
   // Drag handle for mobile to resize scene height
   const dragRef = React.useRef<{startY:number;startVh:number}|null>(null);
@@ -364,35 +341,13 @@ export default function BuildingScene3D({
         </motion.div>
       )}
 
-      {/* Hover overlay card */}
-      {hovered && screenPos && (
-        <div className="pointer-events-none absolute z-20" style={{ left: screenPos.x - 90, top: screenPos.y - 120 }}>
-          <div className="rounded-2xl bg-background/95 backdrop-blur ring-1 ring-border shadow-xl px-3 py-2 w-[180px]">
-            <div className="text-[12px] text-muted mb-0.5">Этаж {hovered.floor}</div>
-            <div className="text-[16px] font-medium">
-              {hovered.id}
-              <span className={`ml-2 inline-block size-2 rounded-full align-middle ${hovered.available?"bg-brand":"bg-muted"}`} />
-            </div>
-            <div className="text-[12px] text-muted">{hovered.area} м² · {hovered.rooms}к</div>
-          </div>
-        </div>
-      )}
-
-      {/* Click pulse feedback */}
-      {pulse && (
-        <div className="pointer-events-none absolute z-20" style={{ left: pulse.x - 10, top: pulse.y - 10 }}>
-          <div className="size-5 rounded-full bg-brand/60 animate-ping" />
-        </div>
-      )}
+      {/* Интерактивные элементы убраны - используем только панораму */}
 
       <Canvas
-        shadows
-        camera={{ position: isMobile ? [6.2, 5.2, 10.5] as any : [7.2, 5.2, 11.5] as any, fov: isMobile ? 42 : 36 }}
+        camera={{ position: [0, 0, 0] as any, fov: 75 }}
         dpr={[1, 2]}
-        onPointerMissed={() => { setHovered(null); }}
       >
-        {/* Smooth camera focus on active building */}
-        <CameraLerp targetXRef={targetXRef} />
+        {/* Камера для панорамы - убрана автоматическая фокусировка */}
         
         {/* Панорамное окружение Google Street View - основной фон */}
         {useStreetView && panoramaUrl ? (
@@ -402,23 +357,8 @@ export default function BuildingScene3D({
           <color attach="background" args={[0.88, 0.92, 0.97]} />
         )}
         
-        {/* Enhanced lighting setup for premium look */}
-        <ambientLight intensity={0.6} />
-        <directionalLight 
-          position={[6, 8, 6]} 
-          intensity={1.2} 
-          castShadow 
-          shadow-mapSize-width={2048} 
-          shadow-mapSize-height={2048}
-          shadow-camera-left={-25}
-          shadow-camera-right={25}
-          shadow-camera-top={25}
-          shadow-camera-bottom={-25}
-        />
-        {/* Additional fill light for premium look */}
-        <directionalLight position={[-4, 4, -4]} intensity={0.5} />
-        {/* Rim light for depth */}
-        <pointLight position={[0, 8, -8]} intensity={0.4} distance={30} />
+        {/* Освещение минимальное - панорама сама обеспечивает освещение */}
+        <ambientLight intensity={1.0} />
         
         {/* Минимальная прозрачная поверхность земли (только для теней от зданий) */}
         {!useStreetView && (
@@ -428,22 +368,18 @@ export default function BuildingScene3D({
           </mesh>
         )}
         
-        {/* Main buildings */}
-        <Building kind="a" withParking offsetX={-3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
-        <Building kind="b" withParking={false} offsetX={3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
-        <ProjectorInside hovered={hovered} onProject={(pt)=>setScreenPos(pt)} />
+        {/* Управление камерой для панорамы - можно крутить и смотреть вокруг */}
         <OrbitControls
-          ref={(ctrl:any)=>{(CameraLerp as any).controlsRef=ctrl}}
-          enablePan={true}
+          enablePan={false}
           enableZoom={true}
-          zoomSpeed={0.5}
+          zoomSpeed={0.3}
           enableRotate={true}
           enableDamping={true}
-          dampingFactor={0.05}
-          maxPolarAngle={Math.PI/2.1}
+          dampingFactor={0.1}
+          maxPolarAngle={Math.PI}
           minPolarAngle={0}
-          minDistance={isMobile ? 8 : 6}
-          maxDistance={isMobile ? 25 : 30}
+          minDistance={0.1}
+          maxDistance={2}
           autoRotate={false}
           target={[0, 0, 0]}
         />
@@ -467,19 +403,4 @@ export default function BuildingScene3D({
   );
 }
 
-function CameraLerp({ targetXRef }: { targetXRef: React.MutableRefObject<number> }) {
-  const { camera } = useThree();
-  const controls = (CameraLerp as any).controlsRef as any | undefined;
-  
-  useFrame(() => {
-    if (!controls || !controls.target) return;
-    
-    // Smooth lerp target X position для фокуса на выбранном здании
-    // Но позволяем пользователю свободно панорамировать
-    const dtx = targetXRef.current - controls.target.x;
-    controls.target.x += dtx * 0.05; // Медленнее, чтобы не мешать ручному управлению
-    
-    controls.update();
-  });
-  return null;
-}
+// CameraLerp удален - больше не нужен без 3D моделей зданий
