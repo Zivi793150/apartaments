@@ -394,21 +394,12 @@ export default function BuildingScene3D({
         {/* Smooth camera focus on active building */}
         <CameraLerp targetXRef={targetXRef} />
         
-        {/* Панорамное окружение (если включено) */}
-        {useStreetView && panoramaUrl && (
+        {/* Панорамное окружение Google Street View - основной фон */}
+        {useStreetView && panoramaUrl ? (
           <StreetViewEnvironment panoramaUrl={panoramaUrl} />
-        )}
-        
-        {/* Стандартное небо (если панорама не используется) */}
-        {!useStreetView && (
-          <>
-            <color attach="background" args={[0.88, 0.92, 0.97]} />
-            <fog attach="fog" args={["#B8D4E8", 15, 50]} />
-            <mesh>
-              <sphereGeometry args={[50, 32, 16]} />
-              <meshBasicMaterial color="#B8D4E8" side={2} />
-            </mesh>
-          </>
+        ) : (
+          // Фоллбек: простое небо, если панорама недоступна
+          <color attach="background" args={[0.88, 0.92, 0.97]} />
         )}
         
         {/* Enhanced lighting setup for premium look */}
@@ -429,83 +420,13 @@ export default function BuildingScene3D({
         {/* Rim light for depth */}
         <pointLight position={[0, 8, -8]} intensity={0.4} distance={30} />
         
-        {/* Ground/Street - расширенная поверхность */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]} receiveShadow>
-          <planeGeometry args={[80, 80]} />
-          <meshStandardMaterial color="#d4d9d0" roughness={0.9} />
-        </mesh>
-        
-        {/* Street markings */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.79, 0]} receiveShadow>
-          <planeGeometry args={[4, 80]} />
-          <meshStandardMaterial color="#9ca3a0" roughness={0.8} />
-        </mesh>
-        
-        {/* Surrounding buildings - левая сторона */}
-        <group position={[-12, 0, -5]}>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[3, 4, 3]} />
-            <meshStandardMaterial color="#c8d0d8" roughness={0.7} metalness={0.1} />
+        {/* Минимальная прозрачная поверхность земли (только для теней от зданий) */}
+        {!useStreetView && (
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]} receiveShadow>
+            <planeGeometry args={[20, 20]} />
+            <meshStandardMaterial color="#d4d9d0" roughness={0.9} transparent opacity={0.2} />
           </mesh>
-        </group>
-        <group position={[-15, 0, 2]}>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[2.5, 3.5, 2.5]} />
-            <meshStandardMaterial color="#d0d8e0" roughness={0.7} metalness={0.1} />
-          </mesh>
-        </group>
-        
-        {/* Surrounding buildings - правая сторона */}
-        <group position={[12, 0, -5]}>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[3, 4.5, 3]} />
-            <meshStandardMaterial color="#c8d0d8" roughness={0.7} metalness={0.1} />
-          </mesh>
-        </group>
-        <group position={[15, 0, 2]}>
-          <mesh castShadow receiveShadow>
-            <boxGeometry args={[2.5, 3.8, 2.5]} />
-            <meshStandardMaterial color="#d0d8e0" roughness={0.7} metalness={0.1} />
-          </mesh>
-        </group>
-        
-        {/* Trees - левая сторона */}
-        {Array.from({ length: 4 }).map((_, i) => (
-          <group key={`tree-l-${i}`} position={[-8 - i * 2, 0, -8 + i * 1.5]}>
-            <mesh position={[0, 1.5, 0]} castShadow>
-              <coneGeometry args={[0.8, 2, 8]} />
-              <meshStandardMaterial color="#4a7c59" roughness={0.9} />
-            </mesh>
-            <mesh position={[0, 0, 0]} castShadow receiveShadow>
-              <cylinderGeometry args={[0.1, 0.1, 1.5]} />
-              <meshStandardMaterial color="#5d4037" roughness={0.8} />
-            </mesh>
-          </group>
-        ))}
-        
-        {/* Trees - правая сторона */}
-        {Array.from({ length: 4 }).map((_, i) => (
-          <group key={`tree-r-${i}`} position={[8 + i * 2, 0, -8 + i * 1.5]}>
-            <mesh position={[0, 1.5, 0]} castShadow>
-              <coneGeometry args={[0.8, 2, 8]} />
-              <meshStandardMaterial color="#4a7c59" roughness={0.9} />
-            </mesh>
-            <mesh position={[0, 0, 0]} castShadow receiveShadow>
-              <cylinderGeometry args={[0.1, 0.1, 1.5]} />
-              <meshStandardMaterial color="#5d4037" roughness={0.8} />
-            </mesh>
-          </group>
-        ))}
-        
-        {/* Background buildings - дальний план */}
-        {Array.from({ length: 6 }).map((_, i) => (
-          <group key={`bg-${i}`} position={[-20 + i * 7, 0, -15]}>
-            <mesh castShadow receiveShadow>
-              <boxGeometry args={[2, 2 + Math.random() * 2, 2]} />
-              <meshStandardMaterial color="#b0b8c0" roughness={0.8} metalness={0.1} />
-            </mesh>
-          </group>
-        ))}
+        )}
         
         {/* Main buildings */}
         <Building kind="a" withParking offsetX={-3.6} filter={filter} onHoverUnit={(u, wp) => setHovered(u ? { ...u, worldPosition: wp } : null)} onPickUnit={(u, wp) => { onPick?.({ id: u.id, area: u.area, rooms: u.rooms }); if (wp) setPulse(screenPos ?? null); setTimeout(() => setPulse(null), 350); }} />
