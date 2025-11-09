@@ -1,10 +1,6 @@
-// @ts-nocheck - Опциональный компонент, mapbox-gl может быть не установлен
 "use client";
 import * as React from "react";
 import { useEffect, useRef } from "react";
-
-// Опциональный компонент - требует установки mapbox-gl
-// Если пакет не установлен, компонент не будет работать, но не сломает сборку
 
 /**
  * Компонент для интеграции Mapbox 3D карты как окружения
@@ -49,22 +45,9 @@ export default function MapboxEnvironment({
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
 
-    // Динамический импорт mapbox-gl с обработкой ошибок
-    // Если пакет не установлен, компонент просто не будет работать, но не сломает сборку
-    // Используем any для обхода проверки TypeScript во время сборки
-    const loadMapbox = async () => {
-      try {
-        // @ts-ignore - mapbox-gl опциональная зависимость
-        const mapboxgl = await import("mapbox-gl");
-        return mapboxgl;
-      } catch (error) {
-        console.warn("Mapbox GL not available. Install mapbox-gl to use this component:", error);
-        return null;
-      }
-    };
-
-    loadMapbox().then((mapboxgl) => {
-      if (!mapboxgl || !mapContainer.current) return;
+    // Динамический импорт mapbox-gl (опционально, чтобы не загружать если не используется)
+    import("mapbox-gl").then((mapboxgl) => {
+      if (!mapContainer.current) return;
 
       (mapboxgl as any).accessToken = mapboxToken;
 

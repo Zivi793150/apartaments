@@ -6,7 +6,6 @@ import { Vector3 } from "three";
 import { useFrame } from "@react-three/fiber";
 import { motion } from "framer-motion";
 import StreetViewEnvironment from "./StreetViewEnvironment";
-import PolyHavenEnvironment from "./PolyHavenEnvironment";
 
 export type PickedUnit = { id: string; area: number; rooms: number } | null;
 
@@ -256,18 +255,12 @@ export default function BuildingScene3D({
   filter, 
   onPick,
   panoramaUrl,
-  useStreetView = false,
-  hdriUrl,
-  usePolyHaven = false,
-  hdriIntensity = 1.0
+  useStreetView = false
 }: { 
   filter: SceneFilter; 
   onPick?: (u: PickedUnit) => void;
   panoramaUrl?: string;
   useStreetView?: boolean;
-  hdriUrl?: string;
-  usePolyHaven?: boolean;
-  hdriIntensity?: number;
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = React.useState<any | null>(null);
@@ -401,23 +394,13 @@ export default function BuildingScene3D({
         {/* Smooth camera focus on active building */}
         <CameraLerp targetXRef={targetXRef} />
         
-        {/* Poly Haven HDRI окружение (приоритет) */}
-        {usePolyHaven && hdriUrl && (
-          <PolyHavenEnvironment 
-            hdriUrl={hdriUrl} 
-            intensity={hdriIntensity}
-            useAsBackground={true}
-            useAsEnvironment={true}
-          />
-        )}
-        
-        {/* Панорамное окружение Google Street View (если Poly Haven не используется) */}
-        {!usePolyHaven && useStreetView && panoramaUrl && (
+        {/* Панорамное окружение (если включено) */}
+        {useStreetView && panoramaUrl && (
           <StreetViewEnvironment panoramaUrl={panoramaUrl} />
         )}
         
-        {/* Стандартное небо (если ни Poly Haven, ни панорама не используются) */}
-        {!usePolyHaven && !useStreetView && (
+        {/* Стандартное небо (если панорама не используется) */}
+        {!useStreetView && (
           <>
             <color attach="background" args={[0.88, 0.92, 0.97]} />
             <fog attach="fog" args={["#B8D4E8", 15, 50]} />

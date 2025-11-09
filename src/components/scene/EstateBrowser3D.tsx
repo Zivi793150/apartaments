@@ -1,15 +1,12 @@
 "use client";
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import BuildingScene3D, { type SceneFilter, type PickedUnit } from "./BuildingScene3D";
 import BuildingHotspots from "./BuildingHotspots";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, X, ExternalLink, Maximize2 } from "lucide-react";
 import { useFavorites, type FavoriteApartment } from "@/components/sections/FavoritesBar";
 import Link from "next/link";
-import { 
-  getPolyHavenHDRIUrl, 
-  POLYHAVEN_CITY_HDRI 
-} from "./PolyHavenEnvironment";
+import { getGoogleStreetViewUrl } from "./StreetViewEnvironment";
 
 function parseId(id: string) {
   // формат: A-4-3 => {building:'A', floor:'4', unit:'3'}
@@ -24,10 +21,41 @@ export default function EstateBrowser3D() {
   const { addFavorite, removeFavorite, isFavorite } = useFavorites();
   const set = (patch: Partial<SceneFilter>) => setFilter(prev => ({ ...prev, ...patch }));
 
-  // Poly Haven HDRI - используем городскую улицу
-  // Можно использовать локальный файл: "/hdris/city_street_4k.hdr"
-  // Или CDN: getPolyHavenHDRIUrl(POLYHAVEN_CITY_HDRI.cityStreet, "4k")
-  const hdriUrl = getPolyHavenHDRIUrl(POLYHAVEN_CITY_HDRI.cityStreet, "4k");
+  // Координаты здания (можно настроить через переменные окружения)
+  // Для Испании: Альгарробо, C. Cam. de Velez, 15
+  // Примерные координаты (в реальности используйте Geocoding API)
+  const buildingCoords = useMemo(() => {
+    // Можно получить из переменных окружения или настроек
+    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7731");
+    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0396");
+    return { lat, lng };
+  }, []);
+
+  // URL панорамы Google Street View (если API ключ настроен)
+  const panoramaUrl = useMemo(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      // Если API ключ не настроен, можно использовать готовую панораму из public/panoramas/
+      return "/panoramas/street-view-360.jpg"; // Путь к готовой панораме
+    }
+    
+    // Получаем 360° панораму с максимальным FOV
+    return getGoogleStreetViewUrl(
+      buildingCoords.lat,
+      buildingCoords.lng,
+      apiKey,
+      "2048x1024", // Высокое разрешение для качества
+      120, // Максимальный FOV для максимального охвата
+      0, // Направление на север (можно настроить)
+      0 // Горизонтальный угол
+    );
+  }, [buildingCoords]);
+
+  // Включаем Street View если есть API ключ или готовая панорама
+  const useStreetView = !!(
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 
+    panoramaUrl.startsWith("/panoramas/")
+  );
 
   const buildingTabs = [{ k: "a", t: "Корпус A" }, { k: "b", t: "Корпус B" }] as const;
 
@@ -152,9 +180,8 @@ export default function EstateBrowser3D() {
         <BuildingScene3D 
           filter={filter} 
           onPick={setPicked}
-          hdriUrl={hdriUrl}
-          usePolyHaven={true}
-          hdriIntensity={1.0}
+          panoramaUrl={useStreetView ? panoramaUrl : undefined}
+          useStreetView={useStreetView}
         />
         
         {/* Animated hotspots/hints */}
