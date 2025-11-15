@@ -136,7 +136,7 @@ export default function SpainBuilding3D({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
   const rotationRef = useRef<{ bearing: number; targetBearing: number }>({ bearing: 0, targetBearing: 0 });
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | null>(null);
 
   const [hoveredApt, setHoveredApt] = useState<string | null>(null);
   const [selectedApt, setSelectedApt] = useState<Spain3DPickedUnit>(null);
