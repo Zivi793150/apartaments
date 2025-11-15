@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams } from "next/navigation";
-import BuildingScene3D from "@/components/scene/BuildingScene3D";
+import MapboxScene from "@/components/scene/MapboxScene";
 
 type ViewMode = "2d" | "3d";
 
@@ -83,8 +83,8 @@ export default function BuildingPage() {
             <div className="text-xs text-muted">{slug.toLowerCase()==="a"?"Паркинг: есть":"Паркинг: нет"}</div>
           </div>
 
-          {view === "3d" ? (
-            <BuildingScene3D 
+{view === "3d" ? (
+            <MapboxScene 
               filter={{
                 activeBuilding: slug.toLowerCase() === "a" ? "a" : "b",
                 rooms: null,
