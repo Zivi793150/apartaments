@@ -240,17 +240,35 @@ export default function SpainBuilding3D({
         } as GeoJSON.Feature,
       });
 
-      // Слой здания
+      // Подсветка/хало под зданием (чтобы дом визуально выделялся)
+      map.addLayer(
+        {
+          id: "our-bldg-boost",
+          type: "fill-extrusion",
+          source: "our-footprint",
+          paint: {
+            "fill-extrusion-color": "#FFDDBB",
+            // немного выше, чтобы создать эффект свечения по краям
+            "fill-extrusion-height": buildingHeight * 1.03,
+            "fill-extrusion-base": 0,
+            "fill-extrusion-opacity": 0.22,
+          },
+        },
+        "waterway-label"
+      );
+
+      // Слой здания (главный, более контрастный)
       map.addLayer(
         {
           id: "our-bldg",
           type: "fill-extrusion",
           source: "our-footprint",
           paint: {
-            "fill-extrusion-color": "#E8EAED",
+            "fill-extrusion-color": "#F2C57C",
             "fill-extrusion-height": buildingHeight,
             "fill-extrusion-base": 0,
-            "fill-extrusion-opacity": 0.95,
+            "fill-extrusion-opacity": 0.98,
+            "fill-extrusion-vertical-gradient": true,
           },
         },
         "waterway-label"
@@ -263,7 +281,7 @@ export default function SpainBuilding3D({
         data: apartmentsGeoJSON,
       });
 
-      // Слой квартир
+      // Слой квартир (чуть приглушены, чтобы дом был в фокусе)
       map.addLayer(
         {
           id: "apartments-fill",
@@ -293,13 +311,20 @@ export default function SpainBuilding3D({
             "fill-extrusion-opacity": [
               "case",
               ["boolean", ["feature-state", "hover"], false],
-              0.95,
-              0.75,
+              0.98,
+              0.6,
             ],
           },
         },
         "our-bldg"
       );
+
+      // Немного сфокусироваться на здании (zoom+pitch) для более выразительного кадра
+      try {
+        map.easeTo({ center: finalCenter as LngLatLike, zoom: 18.2, pitch: 70, bearing: 0, duration: 1600, essential: true });
+      } catch (e) {
+        console.warn("EaseTo focus failed:", e);
+      }
 
       // Обводка квартир
       map.addLayer({
