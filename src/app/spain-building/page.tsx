@@ -1,6 +1,4 @@
-import dynamic from "next/dynamic";
-
-const SpainBuildingClient = dynamic(() => import("./client"), { ssr: false });
+import SpainBuildingClient from "./client";
 
 export default function BuildingSpainPage() {
   return <SpainBuildingClient />;
