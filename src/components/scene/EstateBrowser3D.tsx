@@ -1,5 +1,6 @@
 "use client";
 import React, { useRef, useState, useEffect, useMemo } from "react";
+import type { PickedUnit } from "./BuildingScene3D";
 import MapboxScene, { type MapboxSceneFilter, type MapboxPickedUnit } from "./MapboxScene";
 import BuildingHotspots from "./BuildingHotspots";
 import { motion, AnimatePresence } from "framer-motion";
