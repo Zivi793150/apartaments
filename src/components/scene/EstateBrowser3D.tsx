@@ -14,6 +14,11 @@ function parseId(id: string) {
   return { building: parts[0] ?? "", floor: parts[1] ?? "", unit: parts[2] ?? "" };
 }
 
+const buildingTabs = [
+  { k: "a", t: "Блок A" },
+  { k: "b", t: "Блок B" },
+];
+
 export default function EstateBrowser3D() {
 const [filter, setFilter] = useState<MapboxSceneFilter>({ activeBuilding: "a", rooms: null, onlyAvailable: false, hoverFloor: null });
   const [picked, setPicked] = useState<PickedUnit>(null);
