@@ -333,11 +333,11 @@ export default function SpainBuilding3D({
           const apartmentId = f.properties?.id as string;
 
           if (hoveredFeatureId !== undefined) {
-            map.setFeatureState({ source: "apartments", id: hoveredFeatureId }, { hover: false });
+            map.setFeatureState({ source: "apartments", id: hoveredFeatureId } as any, { hover: false });
           }
 
           hoveredFeatureId = f.id;
-          map.setFeatureState({ source: "apartments", id: hoveredFeatureId }, { hover: true });
+          map.setFeatureState({ source: "apartments", id: hoveredFeatureId } as any, { hover: true });
           setHoveredApt(apartmentId);
         }
       });
@@ -345,7 +345,7 @@ export default function SpainBuilding3D({
       map.on("mouseleave", "apartments-fill", () => {
         map.getCanvas().style.cursor = "";
         if (hoveredFeatureId !== undefined) {
-          map.setFeatureState({ source: "apartments", id: hoveredFeatureId }, { hover: false });
+          map.setFeatureState({ source: "apartments", id: hoveredFeatureId } as any, { hover: false });
         }
         hoveredFeatureId = undefined;
         setHoveredApt(null);
