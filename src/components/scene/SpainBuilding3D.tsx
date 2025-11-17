@@ -152,8 +152,9 @@ export default function SpainBuilding3D({
 
   // Координаты здания (Испания, по умолчанию Алгарробо)
   const defaultCenter = useMemo<[number, number]>(() => {
-    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
-    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
+    // Camino de Velas 15, Algarrobo (36°46'23"N 4°02'20"W)
+    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7730556");
+    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0388889");
     return [lng, lat];
   }, []);
 
@@ -290,6 +291,7 @@ export default function SpainBuilding3D({
       });
 
       // Слой квартир (чуть приглушены, чтобы дом был в фокусе)
+      // We compute final extrusion top as min_height + extrusion_height to avoid misplacement on roof.
       map.addLayer(
         {
           id: "apartments-fill",
@@ -314,7 +316,8 @@ export default function SpainBuilding3D({
                 "#999",
               ],
             ],
-            "fill-extrusion-height": ["get", "height"],
+            // top = min_height + extrusion_height
+            "fill-extrusion-height": ["+", ["get", "min_height"], ["get", "extrusion_height"]],
             "fill-extrusion-base": ["get", "min_height"],
             "fill-extrusion-opacity": [
               "case",
@@ -323,8 +326,7 @@ export default function SpainBuilding3D({
               0.6,
             ],
           },
-        },
-        "our-bldg"
+        }
       );
 
       // Центрируем и подгоняем камеру по границам контура здания
@@ -336,7 +338,14 @@ export default function SpainBuilding3D({
         const minLng = Math.min(...lngs);
         const maxLng = Math.max(...lngs);
 
-        map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 120, maxZoom: 19, duration: 900, linear: false });
+        map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 80, maxZoom: 20, duration: 900, linear: false });
+        // Zoom further (~2x closer feel) without exceeding map max zoom
+        setTimeout(() => {
+          try {
+            const z = map.getZoom();
+            map.easeTo({ zoom: Math.min(z + 1.2, 20), duration: 900 });
+          } catch (e) {}
+        }, 950);
       } catch (e) {
         try {
           map.easeTo({ center: finalCenter as LngLatLike, zoom: 18.2, pitch: 70, bearing: 0, duration: 1600, essential: true });
