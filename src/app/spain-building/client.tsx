@@ -5,7 +5,6 @@ import type { Spain3DPickedUnit, Spain3DSceneFilter } from "@/components/scene/S
 import SpainBuilding3D from "@/components/scene/SpainBuilding3D";
 import { motion } from "framer-motion";
 import { Heart, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
 
 export default function BuildingSpainClient() {
   const [selectedApt, setSelectedApt] = useState<Spain3DPickedUnit>(null);
