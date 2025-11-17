@@ -27,7 +27,7 @@ interface ApartmentData {
 
 const FLOORS = 6;
 const FLOOR_HEIGHT_M = 3.2; // высота одного этажа в метрах
-const UNITS_PER_FLOOR = 4;
+const UNITS_PER_FLOOR = 1; // одна квартира на этаж
 
 // Генерация данных квартир
 function generateApartmentData(): ApartmentData[] {
@@ -165,8 +165,8 @@ export default function SpainBuilding3D({
     if (footprint) return footprint;
     
     const [lng, lat] = finalCenter;
-    const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
-    const dy = 0.00006;
+    const dx = 0.00014 * Math.cos(lat * Math.PI / 180); // увеличено в ~1.5 раза
+    const dy = 0.0001; // увеличено в ~1.5 раза
     return [
       [lng - dx, lat + dy],
       [lng + dx, lat + dy],
@@ -370,9 +370,9 @@ export default function SpainBuilding3D({
         }
       );
 
-      // Центрируем камеру строго на центр здания и приближаем сильнее
+      // Центрируем камеру на дом: опущена к земле (pitch 60), приближена (zoom 20)
       try {
-        map.easeTo({ center: finalCenter as LngLatLike, zoom: 19.6, pitch: 75, bearing: 0, duration: 900, essential: true });
+        map.easeTo({ center: finalCenter as LngLatLike, zoom: 20, pitch: 60, bearing: 0, duration: 900, essential: true });
       } catch (e) {
         console.warn("Focus failed:", e);
       }
@@ -743,8 +743,8 @@ function makeApartmentsGeoJSON(
       }
 
       const unitX = (apt.unit - 1 + 0.5) / UNITS_PER_FLOOR; // center inside unit
-      const apartmentLng = lng + (lngEnd - lng) * unitX;
-      const apartmentLat = lat + (latEnd - lat) * unitX;
+        const apartmentLng = lng + (lngEnd - lng) * unitX;
+        const apartmentLat = lat + (latEnd - lat) * 0.1; // stay on facade edge, don't go deep into building
       const size = 0.00003;
 
       return {
