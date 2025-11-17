@@ -123,6 +123,8 @@ interface SpainBuilding3DProps {
   onPick?: (unit: Spain3DPickedUnit) => void;
   filter?: Spain3DSceneFilter;
   showInfo?: boolean;
+  // Optional per-apartment polygon coordinates (lng, lat) to position apartments exactly according to plans/photo
+  apartmentCoords?: Record<string, [number, number][]>
 }
 
 export default function SpainBuilding3D({
@@ -131,6 +133,7 @@ export default function SpainBuilding3D({
   onPick,
   filter = {},
   showInfo = true,
+  apartmentCoords,
 }: SpainBuilding3DProps) {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -275,7 +278,9 @@ export default function SpainBuilding3D({
       );
 
       // Квартиры как отдельные элементы
-      const apartmentsGeoJSON = makeApartmentsGeoJSON(finalFootprint, apartments);
+      const apartmentsGeoJSON = makeApartmentsGeoJSON(finalFootprint, apartments, apartmentCoords);
+      // If the component was given exact apartment coordinates, use them (we pass prop below after it's available)
+      // (we'll replace the source data further down if a real prop is provided)
       map.addSource("apartments", {
         type: "geojson",
         data: apartmentsGeoJSON,
@@ -319,11 +324,22 @@ export default function SpainBuilding3D({
         "our-bldg"
       );
 
-      // Немного сфокусироваться на здании (zoom+pitch) для более выразительного кадра
+      // Центрируем и подгоняем камеру по границам контура здания
       try {
-        map.easeTo({ center: finalCenter as LngLatLike, zoom: 18.2, pitch: 70, bearing: 0, duration: 1600, essential: true });
+        const lats = polygonCoords.map((p) => p[1]);
+        const lngs = polygonCoords.map((p) => p[0]);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        const minLng = Math.min(...lngs);
+        const maxLng = Math.max(...lngs);
+
+        map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 120, maxZoom: 19, duration: 900, linear: false });
       } catch (e) {
-        console.warn("EaseTo focus failed:", e);
+        try {
+          map.easeTo({ center: finalCenter as LngLatLike, zoom: 18.2, pitch: 70, bearing: 0, duration: 1600, essential: true });
+        } catch (err) {
+          console.warn("Focus failed:", err);
+        }
       }
 
       // Обводка квартир
@@ -612,7 +628,8 @@ export default function SpainBuilding3D({
 // Helper: создание GeoJSON для квартир
 function makeApartmentsGeoJSON(
   footprint: [number, number][],
-  apartments: ApartmentData[]
+  apartments: ApartmentData[],
+  apartmentCoords?: Record<string, [number, number][]>
 ): GeoJSON.FeatureCollection {
   const FLOOR_HEIGHT_M = 3.2;
   
@@ -623,15 +640,39 @@ function makeApartmentsGeoJSON(
       const [lng, lat] = footprint[0];
       const [lngEnd, latEnd] = footprint[2];
       
-      const unitX = (apt.unit - 1) / UNITS_PER_FLOOR;
-      const apartmentLng = lng + (lngEnd - lng) * unitX;
-      const apartmentLat = lat;
-      
+      // If explicit coordinates were provided for this apartment, use them
+      const explicit = apartmentCoords && apartmentCoords[apt.id];
+
       const minHeight = (apt.floor - 1) * FLOOR_HEIGHT_M;
       const height = FLOOR_HEIGHT_M * 0.8;
 
+      if (explicit && explicit.length > 0) {
+        return {
+          type: "Feature",
+          id: idx,
+          properties: {
+            id: apt.id,
+            floor: apt.floor,
+            unit: apt.unit,
+            status: apt.status,
+            area: apt.area,
+            rooms: apt.rooms,
+            price: apt.price,
+            min_height: minHeight,
+            height: minHeight + height,
+          },
+          geometry: {
+            type: "Polygon",
+            coordinates: [explicit],
+          },
+        } as GeoJSON.Feature;
+      }
+
+      const unitX = (apt.unit - 1) / UNITS_PER_FLOOR;
+      const apartmentLng = lng + (lngEnd - lng) * unitX;
+      const apartmentLat = lat;
       const size = 0.00003;
-      
+
       return {
         type: "Feature",
         id: idx,
