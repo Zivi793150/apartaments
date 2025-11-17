@@ -329,29 +329,11 @@ export default function SpainBuilding3D({
         }
       );
 
-      // Центрируем и подгоняем камеру по границам контура здания
+      // Центрируем камеру строго на центр здания и приближаем сильнее
       try {
-        const lats = polygonCoords.map((p) => p[1]);
-        const lngs = polygonCoords.map((p) => p[0]);
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-
-        map.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 80, maxZoom: 20, duration: 900, linear: false });
-        // Zoom further (~2x closer feel) without exceeding map max zoom
-        setTimeout(() => {
-          try {
-            const z = map.getZoom();
-            map.easeTo({ zoom: Math.min(z + 1.2, 20), duration: 900 });
-          } catch (e) {}
-        }, 950);
+        map.easeTo({ center: finalCenter as LngLatLike, zoom: 19.6, pitch: 75, bearing: 0, duration: 900, essential: true });
       } catch (e) {
-        try {
-          map.easeTo({ center: finalCenter as LngLatLike, zoom: 18.2, pitch: 70, bearing: 0, duration: 1600, essential: true });
-        } catch (err) {
-          console.warn("Focus failed:", err);
-        }
+        console.warn("Focus failed:", e);
       }
 
       // Обводка квартир
@@ -664,9 +646,9 @@ function makeApartmentsGeoJSON(
   return {
     type: "FeatureCollection",
     features: apartments.map((apt, idx) => {
-      // Распределяем квартиры по фасаду здания
+      // Распределяем квартиры вдоль фасада: используем первую и вторую точку контура как край фасада
       const [lng, lat] = footprint[0];
-      const [lngEnd, latEnd] = footprint[2];
+      const [lngEnd, latEnd] = footprint[1];
       
       // If explicit coordinates were provided for this apartment (lng/lat), use them
       const explicit = apartmentCoords && apartmentCoords[apt.id];
@@ -707,8 +689,10 @@ function makeApartmentsGeoJSON(
             area: apt.area,
             rooms: apt.rooms,
             price: apt.price,
+            // base of extrusion (meters)
             min_height: minHeight,
-            height: minHeight + height,
+            // extrusion height above base (meters)
+            extrusion_height: height,
           },
           geometry: {
             type: "Polygon",
@@ -717,9 +701,9 @@ function makeApartmentsGeoJSON(
         } as GeoJSON.Feature;
       }
 
-      const unitX = (apt.unit - 1) / UNITS_PER_FLOOR;
+      const unitX = (apt.unit - 1 + 0.5) / UNITS_PER_FLOOR; // center inside unit
       const apartmentLng = lng + (lngEnd - lng) * unitX;
-      const apartmentLat = lat;
+      const apartmentLat = lat + (latEnd - lat) * unitX;
       const size = 0.00003;
 
       return {
@@ -734,7 +718,7 @@ function makeApartmentsGeoJSON(
           rooms: apt.rooms,
           price: apt.price,
           min_height: minHeight,
-          height: minHeight + height,
+          extrusion_height: height,
         },
         geometry: {
           type: "Polygon",
