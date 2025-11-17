@@ -222,6 +222,16 @@ export default function SpainBuilding3D({
     mapRef.current = map;
 
     map.on("load", () => {
+      // debug flag: append ?map_debug=1 to the page URL to enable visual debug helpers
+      let debugMode = false;
+      try {
+        if (typeof window !== "undefined") {
+          const params = new URL(window.location.href).searchParams;
+          debugMode = params.get("map_debug") === "1";
+        }
+      } catch (e) {
+        debugMode = false;
+      }
       // Добавляем 3D terrain
       map.addSource("mapbox-dem", {
         type: "raster-dem",
@@ -271,7 +281,8 @@ export default function SpainBuilding3D({
           type: "fill-extrusion",
           source: "our-footprint",
           paint: {
-            "fill-extrusion-color": "#F2C57C",
+            // when debugging, make the building magenta so it's obvious
+            "fill-extrusion-color": (debugMode ? "#FF00AA" : "#F2C57C") as any,
             "fill-extrusion-height": buildingHeight,
             "fill-extrusion-base": 0,
             "fill-extrusion-opacity": 0.98,
@@ -289,6 +300,36 @@ export default function SpainBuilding3D({
         type: "geojson",
         data: apartmentsGeoJSON,
       });
+
+      // Debug: add centroids layer to visualize apartment placement when debugMode is on
+      if (debugMode) {
+        try {
+          const centroids: GeoJSON.FeatureCollection = {
+            type: "FeatureCollection",
+            features: apartmentsGeoJSON.features.map((f: any) => {
+              const ring = (f.geometry && f.geometry.coordinates && f.geometry.coordinates[0]) || [];
+              let sumLng = 0, sumLat = 0;
+              ring.forEach((pt: any) => { sumLng += pt[0]; sumLat += pt[1]; });
+              const n = ring.length || 1;
+              return {
+                type: "Feature",
+                properties: { id: f.properties?.id },
+                geometry: { type: "Point", coordinates: [sumLng / n, sumLat / n] },
+              } as GeoJSON.Feature;
+            }),
+          };
+
+          map.addSource("apartments-centroids", { type: "geojson", data: centroids });
+          map.addLayer({
+            id: "apartments-centroids-debug",
+            type: "circle",
+            source: "apartments-centroids",
+            paint: { "circle-radius": 6, "circle-color": "#FF0000", "circle-stroke-color": "#fff", "circle-stroke-width": 1 },
+          });
+        } catch (e) {
+          console.warn("Failed to add debug centroids:", e);
+        }
+      }
 
       // Слой квартир (чуть приглушены, чтобы дом был в фокусе)
       // We compute final extrusion top as min_height + extrusion_height to avoid misplacement on roof.
