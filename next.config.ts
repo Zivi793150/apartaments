@@ -6,3 +6,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+// Force rebuild: v1.2.3
