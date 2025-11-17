@@ -1,15 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Spain3DPickedUnit, Spain3DSceneFilter } from "@/components/scene/SpainBuilding3D";
 import SpainBuilding3D from "@/components/scene/SpainBuilding3D";
 import { motion } from "framer-motion";
 import { Heart, ChevronRight } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function BuildingSpainClient() {
   const [selectedApt, setSelectedApt] = useState<Spain3DPickedUnit>(null);
   const [filter, setFilter] = useState<Spain3DSceneFilter>({});
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [apartmentCoordsNormalized, setApartmentCoordsNormalized] = useState<Record<string, [number, number][]> | null>(null);
+
+  useEffect(() => {
+    // Load example normalized apartment coords from public folder (if present)
+    let mounted = true;
+    fetch("/example-apartment-coords-normalized.json")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (mounted && data) {
+          setApartmentCoordsNormalized(data as Record<string, [number, number][]>)
+        }
+      })
+      .catch(() => {});
+    return () => { mounted = false };
+  }, []);
 
   const handleApartmentPick = (apt: Spain3DPickedUnit) => {
     setSelectedApt(apt);
@@ -51,6 +67,7 @@ export default function BuildingSpainClient() {
           onPick={handleApartmentPick}
           filter={filter}
           showInfo={true}
+          apartmentCoordsNormalized={apartmentCoordsNormalized || undefined}
         />
       </motion.div>
 

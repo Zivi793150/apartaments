@@ -125,6 +125,8 @@ interface SpainBuilding3DProps {
   showInfo?: boolean;
   // Optional per-apartment polygon coordinates (lng, lat) to position apartments exactly according to plans/photo
   apartmentCoords?: Record<string, [number, number][]>
+  // Optional normalized apartment polygons relative to building bbox ([0..1] coordinates)
+  apartmentCoordsNormalized?: Record<string, [number, number][]>
 }
 
 export default function SpainBuilding3D({
@@ -134,6 +136,7 @@ export default function SpainBuilding3D({
   filter = {},
   showInfo = true,
   apartmentCoords,
+  apartmentCoordsNormalized,
 }: SpainBuilding3DProps) {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -278,7 +281,7 @@ export default function SpainBuilding3D({
       );
 
       // Квартиры как отдельные элементы
-      const apartmentsGeoJSON = makeApartmentsGeoJSON(finalFootprint, apartments, apartmentCoords);
+      const apartmentsGeoJSON = makeApartmentsGeoJSON(finalFootprint, apartments, apartmentCoords, apartmentCoordsNormalized);
       // If the component was given exact apartment coordinates, use them (we pass prop below after it's available)
       // (we'll replace the source data further down if a real prop is provided)
       map.addSource("apartments", {
@@ -366,7 +369,7 @@ export default function SpainBuilding3D({
       // Hover эффект
       let hoveredFeatureId: string | number | undefined;
 
-      map.on("mousemove", "apartments-fill", (e) => {
+      map.on("mousemove", "apartments-fill", (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.MapboxGeoJSONFeature[] }) => {
         map.getCanvas().style.cursor = "pointer";
 
         if (e.features && e.features.length > 0) {
@@ -393,13 +396,27 @@ export default function SpainBuilding3D({
       });
 
       // Click для выбора квартиры
-      map.on("click", "apartments-fill", (e) => {
+      map.on("click", "apartments-fill", (e: mapboxgl.MapMouseEvent & { features?: mapboxgl.MapboxGeoJSONFeature[] }) => {
         if (e.features && e.features.length > 0) {
           const f = e.features[0] as MapboxGeoJSONFeature;
           const { id, area, rooms, status, floor } = f.properties as any;
           setSelectedApt({ id, area: Number(area), rooms: Number(rooms), status, floor: Number(floor) });
           onPick?.({ id, area: Number(area), rooms: Number(rooms), status, floor: Number(floor) });
           setShowDetails(true);
+        }
+      });
+
+      // Stop auto-rotate when user interacts on touch or mouse down (better mobile UX)
+      map.on("touchstart", () => {
+        if (isAutoRotating) {
+          setIsAutoRotating(false);
+          if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        }
+      });
+      map.on("mousedown", () => {
+        if (isAutoRotating) {
+          setIsAutoRotating(false);
+          if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         }
       });
 
@@ -471,13 +488,14 @@ export default function SpainBuilding3D({
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="absolute top-4 left-4 md:top-6 md:left-6 flex flex-col gap-2 z-20"
+        className="absolute sm:top-4 top-auto sm:left-4 left-1/2 sm:transform-none -translate-x-1/2 bottom-4 md:top-6 md:left-6 flex flex-col gap-3 z-20"
+        style={{ pointerEvents: "auto" }}
       >
         <motion.button
           onClick={handleRotateToggle}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all backdrop-blur-md ring-1 ${
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.98 }}
+          className={`px-6 py-3 rounded-xl font-semibold text-sm transition-all backdrop-blur-md ring-1 text-center ${
             isAutoRotating
               ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white ring-orange-400/50"
               : "bg-white/20 text-white ring-white/30 hover:bg-white/30"
@@ -629,7 +647,8 @@ export default function SpainBuilding3D({
 function makeApartmentsGeoJSON(
   footprint: [number, number][],
   apartments: ApartmentData[],
-  apartmentCoords?: Record<string, [number, number][]>
+  apartmentCoords?: Record<string, [number, number][]>,
+  apartmentCoordsNormalized?: Record<string, [number, number][]>
 ): GeoJSON.FeatureCollection {
   const FLOOR_HEIGHT_M = 3.2;
   
@@ -640,13 +659,34 @@ function makeApartmentsGeoJSON(
       const [lng, lat] = footprint[0];
       const [lngEnd, latEnd] = footprint[2];
       
-      // If explicit coordinates were provided for this apartment, use them
+      // If explicit coordinates were provided for this apartment (lng/lat), use them
       const explicit = apartmentCoords && apartmentCoords[apt.id];
+      // If normalized coordinates were provided instead, convert to lng/lat
+      const explicitNorm = apartmentCoordsNormalized && apartmentCoordsNormalized[apt.id];
+
+      let explicitConverted: [number, number][] | undefined = undefined;
+      if (explicitNorm && explicitNorm.length > 0) {
+        // convert normalized [x,y] in [0..1] to lng/lat using footprint bbox
+        const lats = footprint.map((p) => p[1]);
+        const lngs = footprint.map((p) => p[0]);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        const minLng = Math.min(...lngs);
+        const maxLng = Math.max(...lngs);
+
+        explicitConverted = explicitNorm.map(([nx, ny]) => {
+          const lng = minLng + nx * (maxLng - minLng);
+          const lat = minLat + ny * (maxLat - minLat);
+          return [lng, lat];
+        });
+      }
 
       const minHeight = (apt.floor - 1) * FLOOR_HEIGHT_M;
       const height = FLOOR_HEIGHT_M * 0.8;
 
-      if (explicit && explicit.length > 0) {
+      const useExplicit = explicit && explicit.length > 0 ? explicit : explicitConverted && explicitConverted.length > 0 ? explicitConverted : undefined;
+
+      if (useExplicit) {
         return {
           type: "Feature",
           id: idx,
@@ -663,7 +703,7 @@ function makeApartmentsGeoJSON(
           },
           geometry: {
             type: "Polygon",
-            coordinates: [explicit],
+            coordinates: [useExplicit],
           },
         } as GeoJSON.Feature;
       }
