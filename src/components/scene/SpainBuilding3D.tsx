@@ -293,6 +293,48 @@ export default function SpainBuilding3D({
         "waterway-label"
       );
 
+      // Яркая индикация крыши — чтобы визуально отличать версию (высота чуть выше)
+      try {
+        map.addLayer(
+          {
+            id: "our-roof-highlight",
+            type: "fill-extrusion",
+            source: "our-footprint",
+            paint: {
+              "fill-extrusion-color": "#FF2D55",
+              "fill-extrusion-height": buildingHeight * 1.005,
+              "fill-extrusion-base": buildingHeight - 0.05,
+              "fill-extrusion-opacity": 0.95,
+            },
+          },
+          "waterway-label"
+        );
+      } catch (e) {
+        console.warn("Failed to add roof highlight:", e);
+      }
+
+      // Добавляем DOM-маркер в центре с яркой надписью, чтобы было точно видно изменение
+      try {
+        if (typeof document !== "undefined") {
+          const markerEl = document.createElement("div");
+          markerEl.style.padding = "8px 12px";
+          markerEl.style.background = "#FF6A2B";
+          markerEl.style.color = "#fff";
+          markerEl.style.fontWeight = "700";
+          markerEl.style.borderRadius = "12px";
+          markerEl.style.boxShadow = "0 6px 18px rgba(0,0,0,0.25)";
+          markerEl.style.pointerEvents = "none";
+          markerEl.innerText = "TEST BUILD";
+
+          // place marker slightly above center so it sits over the building
+          new mapboxgl.Marker({ element: markerEl, anchor: "bottom" as any })
+            .setLngLat(finalCenter)
+            .addTo(map);
+        }
+      } catch (e) {
+        console.warn("Failed to add test marker:", e);
+      }
+
       // Квартиры как отдельные элементы
       const apartmentsGeoJSON = makeApartmentsGeoJSON(finalFootprint, apartments, apartmentCoords, apartmentCoordsNormalized);
       // If the component was given exact apartment coordinates, use them (we pass prop below after it's available)
