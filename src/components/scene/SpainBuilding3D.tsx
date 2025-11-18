@@ -264,28 +264,29 @@ export default function SpainBuilding3D({
           type: "fill-extrusion",
           source: "our-footprint",
           paint: {
-            "fill-extrusion-color": "#FFDDBB",
+            // stronger teal glow so change is clearly visible in deployment
+            "fill-extrusion-color": "#00E5B0",
             // немного выше, чтобы создать эффект свечения по краям
             "fill-extrusion-height": buildingHeight * 1.03,
             "fill-extrusion-base": 0,
-            "fill-extrusion-opacity": 0.22,
+            "fill-extrusion-opacity": 0.35,
           },
         },
         "waterway-label"
       );
 
-      // Слой здания (главный, более контрастный)
+      // Слой здания (главний, более контрастный)
       map.addLayer(
         {
           id: "our-bldg",
           type: "fill-extrusion",
           source: "our-footprint",
           paint: {
-            // when debugging, make the building magenta so it's obvious
-            "fill-extrusion-color": (debugMode ? "#FF00AA" : "#F2C57C") as any,
+            // set a very visible teal color in normal mode; keep magenta for debug
+            "fill-extrusion-color": (debugMode ? "#FF00AA" : "#00C2A3") as any,
             "fill-extrusion-height": buildingHeight,
             "fill-extrusion-base": 0,
-            "fill-extrusion-opacity": 0.98,
+            "fill-extrusion-opacity": 1,
             "fill-extrusion-vertical-gradient": true,
           },
         },
@@ -342,9 +343,9 @@ export default function SpainBuilding3D({
             "fill-extrusion-color": [
               "case",
               ["boolean", ["feature-state", "hover"], false],
-              "#FF6A2B",
+              "#FFFF00", // bright yellow on hover so it's obvious
               ["boolean", ["feature-state", "selected"], false],
-              "#FF8C5A",
+              "#FFD166", // selected tint
               [
                 "match",
                 ["get", "status"],
