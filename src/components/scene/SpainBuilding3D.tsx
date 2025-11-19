@@ -209,8 +209,7 @@ export default function SpainBuilding3D({
     mapboxgl.accessToken = token;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      // use a simpler base style to avoid complex label expressions
-      style: "mapbox://styles/mapbox/light-v11",
+      style: "mapbox://styles/mapbox/standard",
       center: finalCenter as LngLatLike,
       zoom: 17.8,
       pitch: 65,
@@ -309,9 +308,7 @@ export default function SpainBuilding3D({
           // non-fatal
         }
 
-        if (changed.length > 0) {
-          console.info('Sanitized style expressions for layers:', changed);
-        }
+        // keep silent about sanitization in production to avoid extra console noise
       };
 
       // Run sanitization multiple times (some style parts may arrive asynchronously)
@@ -342,12 +339,11 @@ export default function SpainBuilding3D({
           type: "fill-extrusion",
           source: "our-footprint",
           paint: {
-            // stronger teal glow so change is clearly visible in deployment
-            "fill-extrusion-color": "#00E5B0",
+            "fill-extrusion-color": "#FFDDBB",
             // немного выше, чтобы создать эффект свечения по краям
             "fill-extrusion-height": buildingHeight * 1.03,
             "fill-extrusion-base": 0,
-            "fill-extrusion-opacity": 0.35,
+            "fill-extrusion-opacity": 0.22,
           },
         },
         "waterway-label"
@@ -360,58 +356,18 @@ export default function SpainBuilding3D({
           type: "fill-extrusion",
           source: "our-footprint",
           paint: {
-            // set a very visible teal color in normal mode; keep magenta for debug
-            "fill-extrusion-color": (debugMode ? "#FF00AA" : "#00C2A3") as any,
+            // when debugging, make the building magenta so it's obvious
+            "fill-extrusion-color": (debugMode ? "#FF00AA" : "#F2C57C") as any,
             "fill-extrusion-height": buildingHeight,
             "fill-extrusion-base": 0,
-            "fill-extrusion-opacity": 1,
+            "fill-extrusion-opacity": 0.98,
             "fill-extrusion-vertical-gradient": true,
           },
         },
         "waterway-label"
       );
 
-      // Яркая индикация крыши — чтобы визуально отличать версию (высота чуть выше)
-      try {
-        map.addLayer(
-          {
-            id: "our-roof-highlight",
-            type: "fill-extrusion",
-            source: "our-footprint",
-            paint: {
-              "fill-extrusion-color": "#FF2D55",
-              "fill-extrusion-height": buildingHeight * 1.005,
-              "fill-extrusion-base": buildingHeight - 0.05,
-              "fill-extrusion-opacity": 0.95,
-            },
-          },
-          "waterway-label"
-        );
-      } catch (e) {
-        console.warn("Failed to add roof highlight:", e);
-      }
-
-      // Добавляем DOM-маркер в центре с яркой надписью, чтобы было точно видно изменение
-      try {
-        if (typeof document !== "undefined") {
-          const markerEl = document.createElement("div");
-          markerEl.style.padding = "8px 12px";
-          markerEl.style.background = "#FF6A2B";
-          markerEl.style.color = "#fff";
-          markerEl.style.fontWeight = "700";
-          markerEl.style.borderRadius = "12px";
-          markerEl.style.boxShadow = "0 6px 18px rgba(0,0,0,0.25)";
-          markerEl.style.pointerEvents = "none";
-          markerEl.innerText = "TEST BUILD";
-
-          // place marker slightly above center so it sits over the building
-          new mapboxgl.Marker({ element: markerEl, anchor: "bottom" as any })
-            .setLngLat(finalCenter)
-            .addTo(map);
-        }
-      } catch (e) {
-        console.warn("Failed to add test marker:", e);
-      }
+      // removed temporary roof highlight and DOM test marker to restore original view
 
       // Квартиры как отдельные элементы
       const apartmentsGeoJSON = makeApartmentsGeoJSON(finalFootprint, apartments, apartmentCoords, apartmentCoordsNormalized);
@@ -463,9 +419,9 @@ export default function SpainBuilding3D({
             "fill-extrusion-color": [
               "case",
               ["boolean", ["feature-state", "hover"], false],
-              "#FFFF00", // bright yellow on hover so it's obvious
+              "#FF6A2B",
               ["boolean", ["feature-state", "selected"], false],
-              "#FFD166", // selected tint
+              "#FF8C5A",
               [
                 "match",
                 ["get", "status"],

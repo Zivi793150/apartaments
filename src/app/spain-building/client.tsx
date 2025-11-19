@@ -53,10 +53,7 @@ export default function BuildingSpainClient() {
           <p className="text-lg text-slate-300">
             Алгарробо • Испания • Просмотр через Mapbox 3D с реальным окружением
           </p>
-          {/* Visible test banner so deployed change is obvious */}
-          <div className="mt-3 inline-block bg-orange-500 text-white px-3 py-1 rounded-full font-semibold shadow-lg">
-            TEST BUILD — визуальная проверка
-          </div>
+          {/* header text */}
         </div>
       </motion.div>
 
@@ -179,11 +176,11 @@ export default function BuildingSpainClient() {
                 </div>
                 <div className="flex justify-between">
                   <span>Квартир на этаж:</span>
-                  <span className="font-semibold text-white">1</span>
+                  <span className="font-semibold text-white">4</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Итого квартир:</span>
-                  <span className="font-semibold text-white">6</span>
+                  <span className="font-semibold text-white">24</span>
                 </div>
                 <div className="flex justify-between pt-3 border-t border-white/10">
                   <span>Высота этажа:</span>
