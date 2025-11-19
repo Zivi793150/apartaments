@@ -241,6 +241,46 @@ export default function SpainBuilding3D({
       });
       map.setTerrain({ source: "mapbox-dem", exaggeration: 1.5 });
 
+      // Sanitize potentially unsafe style expressions from the base Mapbox style
+      // (some Mapbox styles contain expressions that expect properties like `sizerank` —
+      // when those properties are missing, the console logs warnings/errors).
+      const sanitizeExpression = (expr: any): any => {
+        if (!Array.isArray(expr)) return expr;
+        // If this is a ['get', 'sizerank'] expression, replace with a safe coalesce to 0
+        if (expr.length === 2 && expr[0] === 'get' && expr[1] === 'sizerank') {
+          return ['coalesce', ['get', 'sizerank'], 0];
+        }
+        // Recurse into nested arrays
+        return expr.map((e: any) => sanitizeExpression(e));
+      };
+
+      const sanitizeLayers = () => {
+        try {
+          const style = map.getStyle();
+          (style.layers || []).forEach((layer: any) => {
+            const layerId = layer.id;
+            const paint = (layer.paint || {}) as Record<string, any>;
+            Object.keys(paint).forEach((prop) => {
+              const value = paint[prop];
+              const newValue = sanitizeExpression(value);
+              if (JSON.stringify(value) !== JSON.stringify(newValue)) {
+                try {
+                  map.setPaintProperty(layerId, prop, newValue as any);
+                } catch (e) {
+                  // ignore layers that can't be updated at runtime
+                }
+              }
+            });
+          });
+        } catch (e) {
+          // non-fatal
+          // console.warn('Failed to sanitize style expressions', e);
+        }
+      };
+
+      // Run sanitization after load so we don't get expression-evaluation console errors
+      sanitizeLayers();
+
       // Добавляем собственный контур здания с высотой
       const polygonCoords = [...finalFootprint, finalFootprint[0]];
       const buildingHeight = FLOORS * FLOOR_HEIGHT_M;
