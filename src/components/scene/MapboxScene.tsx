@@ -103,7 +103,7 @@ export default function MapboxScene({
     mapboxgl.accessToken = token;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/standard",
+      style: "mapbox://styles/mapbox/light-v11",
       center: center as LngLatLike,
       zoom: 17.6,
       pitch: 60,

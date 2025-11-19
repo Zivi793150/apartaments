@@ -209,7 +209,8 @@ export default function SpainBuilding3D({
     mapboxgl.accessToken = token;
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: "mapbox://styles/mapbox/standard",
+      // use a simpler base style to avoid complex label expressions
+      style: "mapbox://styles/mapbox/light-v11",
       center: finalCenter as LngLatLike,
       zoom: 17.8,
       pitch: 65,
@@ -255,35 +256,68 @@ export default function SpainBuilding3D({
       };
 
       const sanitizeLayers = () => {
+        const changed: Array<{ layerId: string; prop: string }> = [];
         try {
-          const style = map.getStyle();
+          const style = (map as any).getStyle();
           (style.layers || []).forEach((layer: any) => {
             const layerId = layer.id;
+
+            // sanitize paint properties
             const paint = (layer.paint || {}) as Record<string, any>;
             Object.keys(paint).forEach((prop) => {
               const value = paint[prop];
               const newValue = sanitizeExpression(value);
               if (JSON.stringify(value) !== JSON.stringify(newValue)) {
-                  try {
-                  // map.setPaintProperty has narrow TypeScript typings; at runtime
-                  // we may update arbitrary paint properties from the style.
-                  // Cast to any to avoid build-time type errors while keeping
-                  // the runtime behavior.
+                try {
                   (map as any).setPaintProperty(layerId, prop as any, newValue as any);
+                  changed.push({ layerId, prop });
                 } catch (e) {
                   // ignore layers that can't be updated at runtime
                 }
               }
             });
+
+            // sanitize layout properties
+            const layout = (layer.layout || {}) as Record<string, any>;
+            Object.keys(layout).forEach((prop) => {
+              const value = layout[prop];
+              const newValue = sanitizeExpression(value);
+              if (JSON.stringify(value) !== JSON.stringify(newValue)) {
+                try {
+                  (map as any).setLayoutProperty(layerId, prop as any, newValue as any);
+                  changed.push({ layerId, prop: `layout.${prop}` });
+                } catch (e) {
+                  // ignore
+                }
+              }
+            });
+
+            // sanitize filters
+            if (layer.filter) {
+              const newFilter = sanitizeExpression(layer.filter);
+              if (JSON.stringify(layer.filter) !== JSON.stringify(newFilter)) {
+                try {
+                  (map as any).setFilter(layerId, newFilter as any);
+                  changed.push({ layerId, prop: 'filter' });
+                } catch (e) {
+                  // ignore
+                }
+              }
+            }
           });
         } catch (e) {
           // non-fatal
-          // console.warn('Failed to sanitize style expressions', e);
+        }
+
+        if (changed.length > 0) {
+          console.info('Sanitized style expressions for layers:', changed);
         }
       };
 
-      // Run sanitization after load so we don't get expression-evaluation console errors
+      // Run sanitization multiple times (some style parts may arrive asynchronously)
       sanitizeLayers();
+      setTimeout(sanitizeLayers, 500);
+      setTimeout(sanitizeLayers, 1500);
 
       // Добавляем собственный контур здания с высотой
       const polygonCoords = [...finalFootprint, finalFootprint[0]];
