@@ -264,8 +264,12 @@ export default function SpainBuilding3D({
               const value = paint[prop];
               const newValue = sanitizeExpression(value);
               if (JSON.stringify(value) !== JSON.stringify(newValue)) {
-                try {
-                  map.setPaintProperty(layerId, prop, newValue as any);
+                  try {
+                  // map.setPaintProperty has narrow TypeScript typings; at runtime
+                  // we may update arbitrary paint properties from the style.
+                  // Cast to any to avoid build-time type errors while keeping
+                  // the runtime behavior.
+                  (map as any).setPaintProperty(layerId, prop as any, newValue as any);
                 } catch (e) {
                   // ignore layers that can't be updated at runtime
                 }
