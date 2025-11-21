@@ -52,8 +52,9 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
       const ring = u.polyUV.map(p => uvToLngLat(p, quad));
       ring.push(ring[0]);
       // place unit extrusion to occupy the whole floor height on the facade
-      const min_h = (u.floor - 1) * FLOOR_HEIGHT_M;
-      const h = u.floor * FLOOR_HEIGHT_M;
+      // add small epsilon inset to avoid z-fighting with building top/base
+      const min_h = (u.floor - 1) * FLOOR_HEIGHT_M + 0.02;
+      const h = u.floor * FLOOR_HEIGHT_M - 0.02;
       return {
         type: "Feature",
         properties: { id: u.id, floor: u.floor, status: u.status, area: u.area, rooms: u.rooms, min_height: min_h, height: h },
@@ -142,10 +143,23 @@ export default function MapboxScene({
         map.on("load", () => {
           // Наш дом: добавляем footprint и слой здания
           const polygonCoords = [...footprint, footprint[0]];
+          // our building - slightly reduced height to avoid z-fighting with unit extrusions
           map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords] } } });
-          map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": "#EAECEF", "fill-extrusion-height": ["*", ["get", "floors"], FLOOR_HEIGHT_M], "fill-extrusion-opacity": 0.9 } });
+          map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": "#EAECEF", "fill-extrusion-height": ["-", ["*", ["get", "floors"], FLOOR_HEIGHT_M], 0.05], "fill-extrusion-opacity": 0.98 } });
 
-          // Квартиры: добавляем source и слои
+          // Add facade + balcony + glass approximation
+          const facadeFC = makeFacadeFeatureCollection(footprint as any, FLOORS);
+          map.addSource("facade", { type: "geojson", data: facadeFC });
+          // facade bands
+          map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
+
+          // glass panels (transparent)
+          map.addLayer({ id: "facade-glass", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "glass"], paint: { "fill-extrusion-color": "#a8d0ff", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.18 } });
+
+          // balconies
+          map.addLayer({ id: "facade-balconies", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "balcony"], paint: { "fill-extrusion-color": "#e9e6e1", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 1 } });
+
+          // Квартиры: добавляем source и слои (оставляем поверх фасада)
           const fc = makeUnitsFeatureCollection(footprint as any, units);
           map.addSource("units", { type: "geojson", data: fc });
           map.addLayer({
@@ -162,14 +176,14 @@ export default function MapboxScene({
               ],
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.7,
+              "fill-extrusion-opacity": 0.75,
             }
           });
           map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.jumpTo({ center: center as LngLatLike, zoom: 18.2, pitch: 65, bearing: 0 });
+            map.jumpTo({ center: center as LngLatLike, zoom: 20.0, pitch: 74, bearing: -8 });
           } catch(e) {}
 
           setReady(true);
@@ -230,4 +244,42 @@ export default function MapboxScene({
       <div ref={tipRef} className="absolute pointer-events-none bg-[#111] text-white text-xs px-2 py-1 rounded" style={{ display: "none" }} />
     </div>
   );
+}
+
+// Scale polygon (lng,lat points) from centroid by factor (positive = outward)
+function scalePolygon(pts: [number, number][], factor: number) {
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return pts.map(p => {
+    return [cx + (p[0] - cx) * (1 + factor), cy + (p[1] - cy) * (1 + factor)] as [number, number];
+  });
+}
+
+function makeFacadeFeatureCollection(quad: [number, number][], floors: number) {
+  const features: GeoJSON.Feature[] = [];
+  // base facade: one band per floor
+  for (let f = 1; f <= floors; f++) {
+    const band = scalePolygon(quad, 0); // same footprint
+    const min_h = (f - 1) * FLOOR_HEIGHT_M + 0.005;
+    const h = f * FLOOR_HEIGHT_M - 0.005;
+    features.push({ type: 'Feature', properties: { floor: f, min_height: min_h, height: h, type: 'facade' }, geometry: { type: 'Polygon', coordinates: [band.concat([band[0]])] } } as any);
+  }
+
+  // balconies: slightly expanded footprint, thinner slab at floor top
+  const balconyPoly = scalePolygon(quad, 0.03);
+  for (let f = 1; f <= floors; f++) {
+    const slabTop = f * FLOOR_HEIGHT_M - 0.02;
+    const slabBase = slabTop - 0.18; // balcony thickness ~0.18m
+    features.push({ type: 'Feature', properties: { floor: f, min_height: slabBase, height: slabTop, type: 'balcony' }, geometry: { type: 'Polygon', coordinates: [balconyPoly.concat([balconyPoly[0]])] } } as any);
+  }
+
+  // glass panels: inset smaller polygon to simulate windows
+  const glassPoly = scalePolygon(quad, -0.06);
+  for (let f = 1; f <= floors; f++) {
+    const min_h = (f - 1) * FLOOR_HEIGHT_M + 0.15;
+    const h = f * FLOOR_HEIGHT_M - 0.15;
+    features.push({ type: 'Feature', properties: { floor: f, min_height: min_h, height: h, type: 'glass' }, geometry: { type: 'Polygon', coordinates: [glassPoly.concat([glassPoly[0]])] } } as any);
+  }
+
+  return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
 }
