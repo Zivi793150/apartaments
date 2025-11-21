@@ -71,90 +71,78 @@ export default function MapboxScene({
 }) {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<Map | null>(null);
-  const tipRef = useRef<HTMLDivElement | null>(null);
-  const [ready, setReady] = useState(false);
-
-  // Координаты здания (Camino de Vélez 15, Algarrobo) — можно задать через .env
-  const center = useMemo<[number, number]>(() => {
-    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
-    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
-    return [lng, lat];
-  }, []);
-
-  // Прямоугольный контур вокруг центра (~20м x 12м)
-  const footprint = useMemo<[number, number][]>(() => {
-    const [lng, lat] = center;
-    // градусы в метры грубо: 1e-4 ~ 11м по широте; по долготе умножаем на cos(lat)
-    const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
-    const dy = 0.00006;
-    return [
-      [lng - dx, lat + dy],
-      [lng + dx, lat + dy],
-      [lng + dx * 0.95, lat - dy],
-      [lng - dx * 0.95, lat - dy],
-    ];
-  }, [center]);
-
-  const units = useMemo(() => generateUnitsPlan(), []);
-
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: "mapbox://styles/mapbox/standard",
-      center: center as LngLatLike,
-      zoom: 17.6,
-      pitch: 60,
-      bearing: -20,
-      antialias: true,
-      cooperativeGestures: true,
-    });
-    mapRef.current = map;
 
-    map.on("load", () => {
-      // Наш дом
-      const polygonCoords = [...footprint, footprint[0]];
-      map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords] } } });
-      map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": "#EAECEF", "fill-extrusion-height": ["*", ["get", "floors"], FLOOR_HEIGHT_M], "fill-extrusion-opacity": 0.9 } });
+    // --- Динамически загружаем и модифицируем Mapbox style JSON ---
+    const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
+    fetch(styleUrl)
+      .then(res => res.json())
+      .then((styleJson) => {
+        // Рекурсивно заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0]
+        const sanitizeExpression = (expr: any): any => {
+          if (!Array.isArray(expr)) return expr;
+          if (expr.length === 2 && expr[0] === 'get' && expr[1] === 'sizerank') {
+            return ['coalesce', ['get', 'sizerank'], 0];
+          }
+          return expr.map((e: any) => sanitizeExpression(e));
+        };
+        (styleJson.layers || []).forEach((layer: any) => {
+          if (layer.paint) {
+            Object.keys(layer.paint).forEach((prop) => {
+              layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
+            });
+          }
+          if (layer.layout) {
+            Object.keys(layer.layout).forEach((prop) => {
+              layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
+            });
+          }
+        });
 
-      // Квартиры
-      const fc = makeUnitsFeatureCollection(footprint as any, units);
-      map.addSource("units", { type: "geojson", data: fc });
-      map.addLayer({
-        id: "units-fill",
-        type: "fill-extrusion",
-        source: "units",
-        paint: {
-          "fill-extrusion-color": [
-            "match", ["get", "status"],
-            "sold", "#b8b8b8",
-            "reserved", "#ffcd3c",
-            "available", "#4fea98",
-            "#4fea98"
-          ],
-          "fill-extrusion-height": ["get", "height"],
-          "fill-extrusion-base": ["get", "min_height"],
-          "fill-extrusion-opacity": 0.7,
-        }
+        // Инициализируем карту с модифицированным стилем
+        const map = new mapboxgl.Map({
+          container: containerRef.current,
+          style: styleJson,
+          center: center as LngLatLike,
+          zoom: 17.6,
+          pitch: 60,
+          bearing: -20,
+          antialias: true,
+          cooperativeGestures: true,
+        });
+        mapRef.current = map;
+
+        map.on("load", () => {
+          // Наш дом
+          const polygonCoords = [...footprint, footprint[0]];
+          /*...existing code...*/
+          map.addLayer({
+            id: "units-fill",
+            type: "fill-extrusion",
+            source: "units",
+            paint: {
+              "fill-extrusion-color": [
+                "match", ["get", "status"],
+                "sold", "#b8b8b8",
+                "reserved", "#ffcd3c",
+                "available", "#4fea98",
+                "#4fea98"
+              ],
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0.7,
+            }
+          });
+          map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
+
+          // Hover/tooltip
+          /*...existing code...*/
+        });
       });
-      map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
-
-      // Hover/tooltip
-
-            // --- SANITIZE MAPBOX STYLE EXPRESSIONS ---
-            // Заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0] во всех слоях
-            const sanitizeExpression = (expr: any): any => {
-              if (!Array.isArray(expr)) return expr;
-              if (expr.length === 2 && expr[0] === 'get' && expr[1] === 'sizerank') {
-                return ['coalesce', ['get', 'sizerank'], 0];
-              }
-              return expr.map((e: any) => sanitizeExpression(e));
-            };
-            const sanitizeLayers = () => {
-              try {
-                const style = (map as any).getStyle();
+    /*...existing code...*/
+  }, [token, center, footprint, units, onPick]);
                 (style.layers || []).forEach((layer: any) => {
                   const layerId = layer.id;
                   const paint = (layer.paint || {}) as Record<string, any>;
