@@ -142,6 +142,47 @@ export default function MapboxScene({
       map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
 
       // Hover/tooltip
+
+            // --- SANITIZE MAPBOX STYLE EXPRESSIONS ---
+            // Заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0] во всех слоях
+            const sanitizeExpression = (expr: any): any => {
+              if (!Array.isArray(expr)) return expr;
+              if (expr.length === 2 && expr[0] === 'get' && expr[1] === 'sizerank') {
+                return ['coalesce', ['get', 'sizerank'], 0];
+              }
+              return expr.map((e: any) => sanitizeExpression(e));
+            };
+            const sanitizeLayers = () => {
+              try {
+                const style = (map as any).getStyle();
+                (style.layers || []).forEach((layer: any) => {
+                  const layerId = layer.id;
+                  const paint = (layer.paint || {}) as Record<string, any>;
+                  Object.keys(paint).forEach((prop) => {
+                    const value = paint[prop];
+                    const newValue = sanitizeExpression(value);
+                    if (JSON.stringify(value) !== JSON.stringify(newValue)) {
+                      try {
+                        (map as any).setPaintProperty(layerId, prop as any, newValue as any);
+                      } catch (e) {}
+                    }
+                  });
+                  const layout = (layer.layout || {}) as Record<string, any>;
+                  Object.keys(layout).forEach((prop) => {
+                    const value = layout[prop];
+                    const newValue = sanitizeExpression(value);
+                    if (JSON.stringify(value) !== JSON.stringify(newValue)) {
+                      try {
+                        (map as any).setLayoutProperty(layerId, prop as any, newValue as any);
+                      } catch (e) {}
+                    }
+                  });
+                });
+              } catch (e) {}
+            };
+            sanitizeLayers();
+            setTimeout(sanitizeLayers, 500);
+            setTimeout(sanitizeLayers, 1500);
       map.on("mousemove", "units-fill", (e) => {
         map.getCanvas().style.cursor = "pointer";
         const f = e.features && e.features[0];
