@@ -71,6 +71,7 @@ export default function MapboxScene({
 }) {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<Map | null>(null);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
