@@ -117,32 +117,6 @@ export default function MapboxScene({
         map.on("load", () => {
               /*...existing code...*/
             }, [token, center, footprint, units, onPick]);
-                  const paint = (layer.paint || {}) as Record<string, any>;
-                  Object.keys(paint).forEach((prop) => {
-                    const value = paint[prop];
-                    const newValue = sanitizeExpression(value);
-                    if (JSON.stringify(value) !== JSON.stringify(newValue)) {
-                      try {
-                        (map as any).setPaintProperty(layerId, prop as any, newValue as any);
-                      } catch (e) {}
-                    }
-                  });
-                  const layout = (layer.layout || {}) as Record<string, any>;
-                  Object.keys(layout).forEach((prop) => {
-                    const value = layout[prop];
-                    const newValue = sanitizeExpression(value);
-                    if (JSON.stringify(value) !== JSON.stringify(newValue)) {
-                      try {
-                        (map as any).setLayoutProperty(layerId, prop as any, newValue as any);
-                      } catch (e) {}
-                    }
-                  });
-                });
-              } catch (e) {}
-            };
-            sanitizeLayers();
-            setTimeout(sanitizeLayers, 500);
-            setTimeout(sanitizeLayers, 1500);
       map.on("mousemove", "units-fill", (e) => {
         map.getCanvas().style.cursor = "pointer";
         const f = e.features && e.features[0];
