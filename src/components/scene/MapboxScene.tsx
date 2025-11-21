@@ -72,6 +72,28 @@ export default function MapboxScene({
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
+  const tipRef = useRef<HTMLDivElement | null>(null);
+  const [ready, setReady] = useState(false);
+
+  const center = useMemo<[number, number]>(() => {
+    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
+    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
+    return [lng, lat];
+  }, []);
+
+  const footprint = useMemo<[number, number][]>(() => {
+    const [lng, lat] = center;
+    const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
+    const dy = 0.00006;
+    return [
+      [lng - dx, lat + dy],
+      [lng + dx, lat + dy],
+      [lng + dx * 0.95, lat - dy],
+      [lng - dx * 0.95, lat - dy],
+    ];
+  }, [center]);
+
+  const units = useMemo(() => generateUnitsPlan(), []);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
@@ -117,8 +139,35 @@ export default function MapboxScene({
         mapRef.current = map;
 
         map.on("load", () => {
-              /*...existing code...*/
-            }, [token, center, footprint, units, onPick]);
+          // Наш дом: добавляем footprint и слой здания
+          const polygonCoords = [...footprint, footprint[0]];
+          map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords] } } });
+          map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": "#EAECEF", "fill-extrusion-height": ["*", ["get", "floors"], FLOOR_HEIGHT_M], "fill-extrusion-opacity": 0.9 } });
+
+          // Квартиры: добавляем source и слои
+          const fc = makeUnitsFeatureCollection(footprint as any, units);
+          map.addSource("units", { type: "geojson", data: fc });
+          map.addLayer({
+            id: "units-fill",
+            type: "fill-extrusion",
+            source: "units",
+            paint: {
+              "fill-extrusion-color": [
+                "match", ["get", "status"],
+                "sold", "#b8b8b8",
+                "reserved", "#ffcd3c",
+                "available", "#4fea98",
+                "#4fea98"
+              ],
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0.7,
+            }
+          });
+          map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
+
+          setReady(true);
+        });
       map.on("mousemove", "units-fill", (e) => {
         map.getCanvas().style.cursor = "pointer";
         const f = e.features && e.features[0];
