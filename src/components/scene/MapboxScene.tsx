@@ -115,36 +115,8 @@ export default function MapboxScene({
         mapRef.current = map;
 
         map.on("load", () => {
-          // Наш дом
-          const polygonCoords = [...footprint, footprint[0]];
-          /*...existing code...*/
-          map.addLayer({
-            id: "units-fill",
-            type: "fill-extrusion",
-            source: "units",
-            paint: {
-              "fill-extrusion-color": [
-                "match", ["get", "status"],
-                "sold", "#b8b8b8",
-                "reserved", "#ffcd3c",
-                "available", "#4fea98",
-                "#4fea98"
-              ],
-              "fill-extrusion-height": ["get", "height"],
-              "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.7,
-            }
-          });
-          map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
-
-          // Hover/tooltip
-          /*...existing code...*/
-        });
-      });
-    /*...existing code...*/
-  }, [token, center, footprint, units, onPick]);
-                (style.layers || []).forEach((layer: any) => {
-                  const layerId = layer.id;
+              /*...existing code...*/
+            }, [token, center, footprint, units, onPick]);
                   const paint = (layer.paint || {}) as Record<string, any>;
                   Object.keys(paint).forEach((prop) => {
                     const value = paint[prop];
