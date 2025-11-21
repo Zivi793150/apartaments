@@ -168,26 +168,34 @@ export default function MapboxScene({
             source: "units",
             paint: {
               "fill-extrusion-color": [
-                "match", ["get", "status"],
-                "sold", "#b8b8b8",
-                "reserved", "#ffcd3c",
-                "available", "#4fea98",
-                "#4fea98"
+                "case",
+                  ["boolean", ["feature-state", "hover"], false], "#ff7f50",
+                  ["match", ["get", "status"],
+                    "sold", "#b8b8b8",
+                    "reserved", "#ffcd3c",
+                    "available", "#4fea98",
+                    "#4fea98"
+                  ]
               ],
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.75,
+              "fill-extrusion-opacity": [
+                "case",
+                  ["boolean", ["feature-state", "hover"], false], 0.98,
+                  0.75
+              ],
             }
           });
           map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.jumpTo({ center: center as LngLatLike, zoom: 20.0, pitch: 74, bearing: -8 });
+            map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
           setReady(true);
         });
+      let lastHoverId: string | null = null;
       map.on("mousemove", "units-fill", (e) => {
         map.getCanvas().style.cursor = "pointer";
         const f = e.features && e.features[0];
@@ -198,10 +206,20 @@ export default function MapboxScene({
         tip.style.top = e.point.y + 12 + "px";
         const { id, floor, status, area, rooms } = f.properties as any;
         tip.textContent = `Кв. ${id} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
+        // highlight hovered apartment
+        if (lastHoverId !== id) {
+          if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          map.setFeatureState({ source: "units", id }, { hover: true });
+          lastHoverId = id;
+        }
       });
       map.on("mouseleave", "units-fill", () => {
         map.getCanvas().style.cursor = "";
         if (tipRef.current) tipRef.current.style.display = "none";
+        if (lastHoverId) {
+          map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          lastHoverId = null;
+        }
       });
       map.on("click", "units-fill", (e) => {
         const f = e.features && e.features[0];
