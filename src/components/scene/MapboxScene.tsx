@@ -179,11 +179,7 @@ export default function MapboxScene({
               ],
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": [
-                "case",
-                  ["boolean", ["feature-state", "hover"], false], 0.98,
-                  0.75
-              ],
+              "fill-extrusion-opacity": 0.75,
             }
           });
           map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
