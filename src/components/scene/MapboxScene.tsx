@@ -51,8 +51,9 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
     features: units.map(u => {
       const ring = u.polyUV.map(p => uvToLngLat(p, quad));
       ring.push(ring[0]);
-      const min_h = u.floor * FLOOR_HEIGHT_M;
-      const h = min_h + 0.25;
+      // place unit extrusion to occupy the whole floor height on the facade
+      const min_h = (u.floor - 1) * FLOOR_HEIGHT_M;
+      const h = u.floor * FLOOR_HEIGHT_M;
       return {
         type: "Feature",
         properties: { id: u.id, floor: u.floor, status: u.status, area: u.area, rooms: u.rooms, min_height: min_h, height: h },
@@ -165,6 +166,11 @@ export default function MapboxScene({
             }
           });
           map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": "#2b2b2b", "line-width": 0.8 } });
+
+          // Center and zoom closer to the building so facade is visible
+          try {
+            map.jumpTo({ center: center as LngLatLike, zoom: 18.2, pitch: 65, bearing: 0 });
+          } catch(e) {}
 
           setReady(true);
         });
