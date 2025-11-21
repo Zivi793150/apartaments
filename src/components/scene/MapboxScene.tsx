@@ -103,8 +103,9 @@ export default function MapboxScene({
         });
 
         // Инициализируем карту с модифицированным стилем
+        if (!containerRef.current) return;
         const map = new mapboxgl.Map({
-          container: containerRef.current,
+          container: containerRef.current as HTMLElement,
           style: styleJson,
           center: center as LngLatLike,
           zoom: 17.6,
