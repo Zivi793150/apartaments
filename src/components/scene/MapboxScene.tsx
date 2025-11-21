@@ -193,7 +193,7 @@ export default function MapboxScene({
       setReady(true);
     });
 
-    return () => { map.remove(); };
+    return () => { mapRef.current?.remove(); };
   }, [token, center, footprint, units, onPick]);
 
   // Применение фильтра (available/rooms/floor)
