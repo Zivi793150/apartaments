@@ -83,7 +83,7 @@ export default function MapboxScene({
     return [lng, lat];
   }, []);
 
-  const footprint = useMemo<[number, number][]>(() => {
+  const [footprint, setFootprint] = useState<[number, number][]>(() => {
     const [lng, lat] = center;
     const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
     const dy = 0.00006;
@@ -93,7 +93,33 @@ export default function MapboxScene({
       [lng + dx * 0.95, lat - dy],
       [lng - dx * 0.95, lat - dy],
     ];
-  }, [center]);
+  });
+
+  // Try to load a user-provided footprint / quad from public/building-quad.json
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/building-quad.json');
+        if (!res.ok) return;
+        const json = await res.json();
+        let quad: [number, number][] | null = null;
+        // support simple array [[lng,lat],..] or GeoJSON Feature / FeatureCollection with Polygon
+        if (Array.isArray(json) && json.length >= 4 && Array.isArray(json[0])) {
+          quad = json.slice(0, 4) as any;
+        } else if (json && json.type === 'Feature' && json.geometry && json.geometry.type === 'Polygon') {
+          quad = json.geometry.coordinates[0].slice(0, 4) as any;
+        } else if (json && json.type === 'FeatureCollection' && Array.isArray(json.features) && json.features.length) {
+          const f = json.features.find((ff: any) => ff.geometry && ff.geometry.type === 'Polygon');
+          if (f) quad = f.geometry.coordinates[0].slice(0,4) as any;
+        }
+        if (quad && mounted) setFootprint(quad);
+      } catch (e) {
+        // ignore - fallback to generated rectangle
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const units = useMemo(() => generateUnitsPlan(), []);
   useEffect(() => {
@@ -144,8 +170,12 @@ export default function MapboxScene({
           // Наш дом: добавляем footprint и слой здания
           const polygonCoords = [...footprint, footprint[0]];
           // our building - slightly reduced height to avoid z-fighting with unit extrusions
-          map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords] } } });
-          map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": "#EAECEF", "fill-extrusion-height": ["-", ["*", ["get", "floors"], FLOOR_HEIGHT_M], 0.05], "fill-extrusion-opacity": 0.98 } });
+          // give the building feature an id so it can be targeted with feature-state
+          map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords] } } });
+          // building fill - color reacts to feature-state hover for highlight
+          map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ffd54d", "#EAECEF"], "fill-extrusion-height": ["-", ["*", ["get", "floors"], FLOOR_HEIGHT_M], 0.05], "fill-extrusion-opacity": 0.98 } });
+          // 2D outline of the building footprint (visible on map) which also highlights on hover
+          map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
 
           // Add facade + balcony + glass approximation
           const facadeFC = makeFacadeFeatureCollection(footprint as any, FLOORS);
@@ -200,6 +230,7 @@ export default function MapboxScene({
           setReady(true);
         });
       let lastHoverId: string | null = null;
+      let lastBuildingHover = false;
       map.on("mousemove", "units-fill", (e) => {
         map.getCanvas().style.cursor = "pointer";
         const f = e.features && e.features[0];
@@ -216,6 +247,11 @@ export default function MapboxScene({
           map.setFeatureState({ source: "units", id }, { hover: true });
           lastHoverId = id;
         }
+        // also highlight building footprint while hovering an apartment
+        if (!lastBuildingHover) {
+          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+          lastBuildingHover = true;
+        }
       });
       map.on("mouseleave", "units-fill", () => {
         map.getCanvas().style.cursor = "";
@@ -224,12 +260,26 @@ export default function MapboxScene({
           map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
           lastHoverId = null;
         }
+        if (lastBuildingHover) {
+          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
+          lastBuildingHover = false;
+        }
       });
       map.on("click", "units-fill", (e) => {
         const f = e.features && e.features[0];
         if (!f) return;
         const { id, area, rooms } = f.properties as any;
         onPick?.({ id, area: Number(area), rooms: Number(rooms) });
+      });
+
+      // hovering directly on the building extrusion toggles outline highlight as well
+      map.on("mousemove", "our-bldg", (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+      });
+      map.on("mouseleave", "our-bldg", () => {
+        map.getCanvas().style.cursor = "";
+        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
       });
 
       setReady(true);
