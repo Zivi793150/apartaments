@@ -143,16 +143,7 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  // Загружаем квартиры из geojson для 3 этажей
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const loaded = await loadUnitsFromGeojson();
-      if (mounted && loaded.length) setUnits(loaded);
-      else if (mounted) setUnits([]);
-    })();
-    return () => { mounted = false; };
-  }, []);
+  
   // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
