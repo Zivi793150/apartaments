@@ -12,25 +12,39 @@ export type MapboxSceneFilter = {
 };
 
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
-const FLOORS = 6;
-const FLOOR_HEIGHT_M = 3.1; // метр высоты
+
+const TEST_FLOORS = [1, 2, 3];
+const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
+
 
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
 
-function generateUnitsPlan(): Unit[] {
+
+// Парсинг geojson квартир
+async function loadUnitsFromGeojson(): Promise<Unit[]> {
+  const floors = TEST_FLOORS;
   const units: Unit[] = [];
-  for (let f = 1; f <= FLOORS; f++) {
-    for (let i = 0; i < UNITS_PER_FLOOR; i++) {
-      const id = `A-${f}-${i + 1}`;
-      const status: Unit["status"] = ((f * (i + 1)) % 5 === 0) ? "reserved" : ((f + i) % 7 === 0 ? "sold" : "available");
-      const area = 35 + i * 3 + f * 1.2;
-      const rooms = (i % 3) + 1 as 1 | 2 | 3;
-      // делим прямоугольник этажа на 4 равных секции (UV 0..1)
-      const x0 = i * 0.25, x1 = (i + 1) * 0.25;
-      const polyUV: [number, number][] = [ [x0 + 0.02, 0.1], [x1 - 0.02, 0.1], [x1 - 0.02, 0.9], [x0 + 0.02, 0.9] ];
-      units.push({ id, floor: f, status, area: Number(area.toFixed(1)), rooms, polyUV });
-    }
+  for (const f of floors) {
+    try {
+      const res = await fetch(`/plans/geojson/${f}floor.geojson`);
+      if (!res.ok) continue;
+      const geojson = await res.json();
+      if (geojson && geojson.features) {
+        for (const feat of geojson.features) {
+          // предполагаем, что properties содержит нужные данные
+          const props = feat.properties || {};
+          units.push({
+            id: props.id || `${f}-${units.length+1}`,
+            floor: f,
+            status: props.status || "available",
+            area: props.area || 40,
+            rooms: props.rooms || 2,
+            polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0,0],[1,0],[1,1],[0,1]],
+          });
+        }
+      }
+    } catch {}
   }
   return units;
 }
@@ -126,8 +140,19 @@ export default function MapboxScene({
     return () => { mounted = false; };
   }, []);
 
-  const units = useMemo(() => generateUnitsPlan(), []);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
+
+  // Загружаем квартиры из geojson для 3 этажей
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const loaded = await loadUnitsFromGeojson();
+      if (mounted && loaded.length) setUnits(loaded);
+      else if (mounted) setUnits([]);
+    })();
+    return () => { mounted = false; };
+  }, []);
   // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
@@ -202,6 +227,7 @@ export default function MapboxScene({
           
           // our building - slightly reduced height to avoid z-fighting with unit extrusions
           // give the building feature an id so it can be targeted with feature-state
+          const FLOORS = TEST_FLOORS.length;
           if (isValid) {
             map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
           } else {
@@ -226,7 +252,7 @@ export default function MapboxScene({
           map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
 
           // Add facade + balcony + glass approximation
-          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, FLOORS);
+          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TEST_FLOORS.length);
           map.addSource("facade", { type: "geojson", data: facadeFC });
           // facade bands
           map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
