@@ -92,8 +92,8 @@ export default function MapboxScene({
   const [ready, setReady] = useState(false);
 
   const center = useMemo<[number, number]>(() => {
-    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
-    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
+    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7719");
+    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0419");
     return [lng, lat];
   }, []);
 
