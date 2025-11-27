@@ -348,7 +348,8 @@ export default function MapboxScene({
         });
       } catch (err) {
         console.error('Failed to load map:', err);
-        setError('Failed to load map. ' + (err.message || 'Please try again later.'));
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        setError(`Failed to load map. ${errorMessage}`);
       }
     };
 
