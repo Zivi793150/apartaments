@@ -3,24 +3,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-// Helper function to sanitize mapbox style expressions
-const sanitizeExpression = (expr: any): any => {
-  if (!Array.isArray(expr)) return expr;
-  
-  // Skip processing of feature sets and selectors
-  if (expr[0] === 'feature-set' || expr[0] === 'feature-state') {
-    return expr;
-  }
-  
-  // Handle get expressions
-  if (expr[0] === 'get' && expr[1] === 'sizerank') {
-    return ['coalesce', ['get', 'sizerank'], 0];
-  }
-  
-  // Recursively process array items
-  return expr.map((e: any) => sanitizeExpression(e));
-};
-
 export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
 export type MapboxSceneFilter = {
   activeBuilding: "all" | "a" | "b";
@@ -45,13 +27,8 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const units: Unit[] = [];
   for (const f of floors) {
     try {
-      // Handle different floor file naming conventions
-      let filename = `floor${f}`;
-      if (f === 1) filename = '1floor';
-      else if (f === 2) filename = 'floor2';
-      else if (f === 3) filename = 'floor3';
-      
-      const res = await fetch(`/plans/geojson/${filename}.geojson`);
+      const floorFile = f === 1 ? '1floor' : `floor${f}`;
+      const res = await fetch(`/plans/geojson/${floorFile}.geojson`);
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && geojson.features) {
@@ -200,10 +177,7 @@ export default function MapboxScene({
         }
 
         styleJson.layers = styleJson.layers.map((layer: any) => {
-          if (layer.id === 'place-labels' || 
-              layer.id.startsWith('place-') || 
-              layer.id.includes('label') ||
-              layer.type === 'symbol') {
+          if (layer.id === 'place-labels' || layer.id.startsWith('place-')) {
             return layer;
           }
 
@@ -297,22 +271,10 @@ export default function MapboxScene({
             // Квартиры: добавляем source и слои (оставляем поверх фасада)
             let unitsSourceData: GeoJSON.FeatureCollection;
             if (externalUnits && externalUnits.type === 'FeatureCollection') {
-              // Ensure features have required properties
+              // Ensure features have an id (Mapbox feature-state uses feature id)
               const features = externalUnits.features.map((f: any, idx: number) => {
                 const copy = { ...f } as any;
-                if (typeof copy.id === 'undefined') {
-                  copy.id = copy.properties && copy.properties.id 
-                    ? String(copy.properties.id) 
-                    : `ext-${idx}`;
-                }
-                // Ensure required properties exist
-                if (!copy.properties) copy.properties = {};
-                if (copy.properties.min_height === undefined) {
-                  copy.properties.min_height = (copy.properties.floor || 1) * FLOOR_HEIGHT_M - FLOOR_HEIGHT_M + 0.02;
-                }
-                if (copy.properties.height === undefined) {
-                  copy.properties.height = (copy.properties.floor || 1) * FLOOR_HEIGHT_M - 0.02;
-                }
+                if (typeof copy.id === 'undefined') copy.id = copy.properties && copy.properties.id ? String(copy.properties.id) : `ext-${idx}`;
                 return copy;
               });
               unitsSourceData = { type: 'FeatureCollection', features };
@@ -320,11 +282,7 @@ export default function MapboxScene({
             } else {
               unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
             }
-            map.addSource("units", { 
-              type: "geojson", 
-              data: unitsSourceData,
-              generateId: true // Ensure features have unique IDs
-            });
+            map.addSource("units", { type: "geojson", data: unitsSourceData });
             map.addLayer({
               id: "units-fill",
               type: "fill-extrusion",
@@ -367,8 +325,7 @@ export default function MapboxScene({
         });
       } catch (err) {
         console.error('Failed to load map:', err);
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-        setError(`Failed to load map. ${errorMessage}`);
+        setError('Failed to load map. ' + (err.message || 'Please try again later.'));
       }
     };
 
@@ -408,26 +365,16 @@ export default function MapboxScene({
 
   return (
     <div className="relative h-full w-full">
-      <div 
-        ref={containerRef} 
-        className="h-full w-full"
-        style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
-      />
+      <div ref={containerRef} className="h-full w-full" />
       {!ready && !error && (
-        <div 
-          className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20"
-          style={{ zIndex: 1 }}
-        >
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
           <div className="bg-white p-4 rounded-lg shadow-lg">
             <div className="animate-pulse">Loading map...</div>
           </div>
         </div>
       )}
       {error && (
-        <div 
-          className="absolute inset-0 flex items-center justify-center bg-red-50"
-          style={{ zIndex: 1 }}
-        >
+        <div className="absolute inset-0 flex items-center justify-center bg-red-50">
           <div className="text-center p-4 max-w-md">
             <h3 className="text-red-600 font-semibold mb-2">Error loading map</h3>
             <p className="text-sm text-gray-600 mb-4">{error}</p>
