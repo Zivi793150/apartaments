@@ -200,7 +200,10 @@ export default function MapboxScene({
         }
 
         styleJson.layers = styleJson.layers.map((layer: any) => {
-          if (layer.id === 'place-labels' || layer.id.startsWith('place-')) {
+          if (layer.id === 'place-labels' || 
+              layer.id.startsWith('place-') || 
+              layer.id.includes('label') ||
+              layer.type === 'symbol') {
             return layer;
           }
 
@@ -294,10 +297,22 @@ export default function MapboxScene({
             // Квартиры: добавляем source и слои (оставляем поверх фасада)
             let unitsSourceData: GeoJSON.FeatureCollection;
             if (externalUnits && externalUnits.type === 'FeatureCollection') {
-              // Ensure features have an id (Mapbox feature-state uses feature id)
+              // Ensure features have required properties
               const features = externalUnits.features.map((f: any, idx: number) => {
                 const copy = { ...f } as any;
-                if (typeof copy.id === 'undefined') copy.id = copy.properties && copy.properties.id ? String(copy.properties.id) : `ext-${idx}`;
+                if (typeof copy.id === 'undefined') {
+                  copy.id = copy.properties && copy.properties.id 
+                    ? String(copy.properties.id) 
+                    : `ext-${idx}`;
+                }
+                // Ensure required properties exist
+                if (!copy.properties) copy.properties = {};
+                if (copy.properties.min_height === undefined) {
+                  copy.properties.min_height = (copy.properties.floor || 1) * FLOOR_HEIGHT_M - FLOOR_HEIGHT_M + 0.02;
+                }
+                if (copy.properties.height === undefined) {
+                  copy.properties.height = (copy.properties.floor || 1) * FLOOR_HEIGHT_M - 0.02;
+                }
                 return copy;
               });
               unitsSourceData = { type: 'FeatureCollection', features };
@@ -305,7 +320,11 @@ export default function MapboxScene({
             } else {
               unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
             }
-            map.addSource("units", { type: "geojson", data: unitsSourceData });
+            map.addSource("units", { 
+              type: "geojson", 
+              data: unitsSourceData,
+              generateId: true // Ensure features have unique IDs
+            });
             map.addLayer({
               id: "units-fill",
               type: "fill-extrusion",
@@ -389,16 +408,26 @@ export default function MapboxScene({
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+      <div 
+        ref={containerRef} 
+        className="h-full w-full"
+        style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
+      />
       {!ready && !error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20"
+          style={{ zIndex: 1 }}
+        >
           <div className="bg-white p-4 rounded-lg shadow-lg">
             <div className="animate-pulse">Loading map...</div>
           </div>
         </div>
       )}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-red-50">
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-red-50"
+          style={{ zIndex: 1 }}
+        >
           <div className="text-center p-4 max-w-md">
             <h3 className="text-red-600 font-semibold mb-2">Error loading map</h3>
             <p className="text-sm text-gray-600 mb-4">{error}</p>
