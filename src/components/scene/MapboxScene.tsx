@@ -27,7 +27,7 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const units: Unit[] = [];
   for (const f of floors) {
     try {
-      const res = await fetch(`/plans/geojson/${f}floor.geojson`);
+      const res = await fetch(`/plans/geojson/${f === 1 ? '1floor' : f === 2 ? 'floor2' : 'floor3'}.geojson`);
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && geojson.features) {
@@ -149,7 +149,7 @@ export default function MapboxScene({
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch('/units.geojson');
+        const res = await fetch('/plans/geojson/units.geojson');
         if (!res.ok) return;
         const json = await res.json();
         if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
