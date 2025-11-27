@@ -13,7 +13,7 @@ export type MapboxSceneFilter = {
 
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
 
-const TEST_FLOORS = [1, 2, 3];
+const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
 const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
 
