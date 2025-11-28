@@ -3,27 +3,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-// Import Mapbox Style type
-import type { Style as MapboxStyle } from 'mapbox-gl';
-
-// Helper function to sanitize mapbox style expressions
-const sanitizeExpression = (expr: any): any => {
-  if (!Array.isArray(expr)) return expr;
-  
-  // Skip processing of feature sets and selectors
-  if (expr[0] === 'feature-set' || expr[0] === 'feature-state') {
-    return expr;
-  }
-  
-  // Handle get expressions
-  if (expr[0] === 'get' && expr[1] === 'sizerank') {
-    return ['coalesce', ['get', 'sizerank'], 0];
-  }
-  
-  // Recursively process array items
-  return expr.map((e: any) => sanitizeExpression(e));
-};
-
 export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
 export type MapboxSceneFilter = {
   activeBuilding: "all" | "a" | "b";
@@ -48,8 +27,8 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const units: Unit[] = [];
   for (const f of floors) {
     try {
-      const floorFile = f === 1 ? '1floor' : `floor${f}`;
-      const res = await fetch(`/plans/geojson/${floorFile}.geojson`);
+      const filename = f === 1 ? '1floor' : `floor${f}`;
+      const res = await fetch(`/plans/geojson/${filename}.geojson`);
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && geojson.features) {
@@ -183,61 +162,49 @@ export default function MapboxScene({
     return () => { mounted = false; };
   }, []);
 
-  const isInitialized = useRef(false);
-
   useEffect(() => {
-    if (!containerRef.current || isInitialized.current || !token) return;
-    isInitialized.current = true;
+    if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
     const loadMap = async () => {
       try {
-        // Use a simpler default style to avoid style-related issues
-        const defaultStyle: MapboxStyle = {
-          version: 8,
-          name: 'custom-style',
-          sources: {
-            'mapbox-streets': {
-              type: 'vector',
-              url: 'mapbox://mapbox.mapbox-streets-v8'
-            }
-          },
-          glyphs: 'mapbox://fonts/mapbox/{fontstack}/{range}.pbf',
-          layers: [
-            {
-              id: 'background',
-              type: 'background',
-              paint: { 'background-color': '#f0f0f0' }
-            },
-            {
-              id: 'water',
-              source: 'mapbox-streets',
-              'source-layer': 'water',
-              type: 'fill',
-              paint: { 'fill-color': '#a0c8f0' }
-            }
-          ]
-        } as const;
+        const response = await fetch("https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token);
+        const styleJson = await response.json();
+
+        if (!Array.isArray(styleJson.layers)) {
+          console.error('Invalid style format: missing layers array');
+          return;
+        }
+
+        styleJson.layers = styleJson.layers.map((layer: any) => {
+          if (layer.id === 'place-labels' || layer.id.startsWith('place-')) {
+            return layer;
+          }
+
+          if (layer.paint) {
+            Object.keys(layer.paint).forEach((prop) => {
+              if (typeof layer.paint[prop] === 'object') {
+                layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
+              }
+            });
+          }
+
+          if (layer.layout) {
+            Object.keys(layer.layout).forEach((prop) => {
+              if (typeof layer.layout[prop] === 'object') {
+                layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
+              }
+            });
+          }
+
+          return layer;
+        });
 
         if (!containerRef.current) return;
 
-        // Clear any existing content in the container
-        while (containerRef.current.firstChild) {
-          containerRef.current.removeChild(containerRef.current.firstChild);
-        }
-
-        // Ensure container has dimensions
-        if (containerRef.current) {
-          containerRef.current.style.width = '100%';
-          containerRef.current.style.height = '100%';
-        }
-
-        console.log('Creating map with center:', center);
-        
-        // Create map options
-        const mapOptions: mapboxgl.MapboxOptions = {
-          container: containerRef.current,
-          style: defaultStyle,
+        const map = new mapboxgl.Map({
+          container: containerRef.current as HTMLElement,
+          style: styleJson,
           center: center as LngLatLike,
           zoom: 17.6,
           pitch: 60,
@@ -246,49 +213,10 @@ export default function MapboxScene({
           maxPitch: 85,
           minZoom: 15,
           maxZoom: 22,
-          failIfMajorPerformanceCaveat: false,
-          // Add transformRequest to handle loading issues
-          transformRequest: (url: string, resourceType?: string) => {
-            if (resourceType === 'Source' && url.startsWith('http')) {
-              return {
-                url: url,
-                headers: { 'Cache-Control': 'no-cache' },
-                method: 'GET'
-              };
-            }
-            // Return undefined for other cases to use default behavior
-            return { url };
-          }
-        };
-        
-        const map = new mapboxgl.Map(mapOptions);
+          failIfMajorPerformanceCaveat: false
+        });
         mapRef.current = map;
-        
-        // Add error event listeners
-        map.on('error', (e) => {
-          console.error('Map error:', e);
-          setError('Failed to load map. Please try refreshing the page.');
-        });
-        
-        // Debug log map events
-        map.on('load', () => console.log('Map loaded successfully'));
-        map.on('render', () => {
-          if (!ready) {
-            console.log('Map rendered');
-            setReady(true);
-          }
-        });
-        
-        // Fallback in case map doesn't load
-        const loadTimeout = setTimeout(() => {
-          if (!ready) {
-            console.warn('Map load timeout, forcing ready state');
-            setReady(true);
-          }
-        }, 5000);
-        
-        // Clean up timeout
-        return () => clearTimeout(loadTimeout);
+        try { (window as any).__debugMap = map; } catch {}
 
         map.on("load", () => {
           try {
@@ -397,8 +325,7 @@ export default function MapboxScene({
         });
       } catch (err) {
         console.error('Failed to load map:', err);
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-        setError('Failed to load map. ' + errorMessage);
+        setError('Failed to load map. ' + (err.message || 'Please try again later.'));
       }
     };
 
