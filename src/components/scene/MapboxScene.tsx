@@ -233,7 +233,9 @@ export default function MapboxScene({
         }
 
         console.log('Creating map with center:', center);
-        const map = new mapboxgl.Map({
+        
+        // Create map options
+        const mapOptions: mapboxgl.MapboxOptions = {
           container: containerRef.current,
           style: defaultStyle,
           center: center as LngLatLike,
@@ -246,16 +248,20 @@ export default function MapboxScene({
           maxZoom: 22,
           failIfMajorPerformanceCaveat: false,
           // Add transformRequest to handle loading issues
-          transformRequest: (url, resourceType) => {
+          transformRequest: (url: string, resourceType?: string) => {
             if (resourceType === 'Source' && url.startsWith('http')) {
               return {
                 url: url,
-                headers: { 'Cache-Control': 'no-cache' }
+                headers: { 'Cache-Control': 'no-cache' },
+                method: 'GET'
               };
             }
+            // Return undefined for other cases to use default behavior
+            return { url };
           }
-        });
+        };
         
+        const map = new mapboxgl.Map(mapOptions);
         mapRef.current = map;
         
         // Add error event listeners
