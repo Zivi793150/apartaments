@@ -170,22 +170,33 @@ export default function MapboxScene({
     const loadFloorData = async (floor: number) => {
       try {
         const floorFile = floor === 1 ? '1floor' : `floor${floor}`;
-        const res = await fetch(`/plans/geojson/${floorFile}.geojson`);
+        const url = `/plans/geojson/${floorFile}.geojson`;
+        console.log(`Попытка загрузить этаж ${floor} из ${url}`);
+        
+        const res = await fetch(url);
         if (!res.ok) {
           console.log(`Файл этажа ${floor} не найден, пропускаем`);
           return [];
         }
+        
         const json = await res.json();
+        console.log(`Данные этажа ${floor}:`, json);
+        
         if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) {
-          return json.features.map((f: any, idx: number) => ({
-            ...f,
-            properties: {
-              ...f.properties,
-              floor: floor,
-              id: f.properties?.id || `unit-${floor}-${idx}`,
-              status: f.properties?.status || 'available'
-            }
-          }));
+          const features = json.features.map((f: any, idx: number) => {
+            const feature = {
+              ...f,
+              properties: {
+                ...f.properties,
+                floor: floor,
+                id: f.properties?.id || `unit-${floor}-${idx}`,
+                status: f.properties?.status || 'available'
+              }
+            };
+            console.log(`Обработана квартира на этаже ${floor}:`, feature);
+            return feature;
+          });
+          return features;
         }
       } catch (e) {
         console.error(`Ошибка при загрузке этажа ${floor}:`, e);
@@ -335,11 +346,33 @@ export default function MapboxScene({
                 return copy;
               });
               unitsSourceData = { type: 'FeatureCollection', features };
+              console.log('Создан unitsSourceData с количеством features:', features.length);
+              console.log('Пример feature:', features[0]);
+              
+              // Проверяем координаты
+              if (features.length > 0 && features[0].geometry && features[0].geometry.coordinates) {
+                console.log('Координаты первой квартиры:', features[0].geometry.coordinates);
+              }
+              
               try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
             } else {
               unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
             }
+            // Проверяем источник данных перед добавлением
+            console.log('Добавляем источник данных units:', unitsSourceData);
+            
+            // Удаляем существующий источник, если он есть
+            if (map.getSource('units')) {
+              map.removeLayer('units-fill');
+              map.removeLayer('units-outline');
+              map.removeSource('units');
+            }
+            
             map.addSource("units", { type: "geojson", data: unitsSourceData });
+            
+            // Проверяем, что источник добавлен
+            console.log('Источник units добавлен:', map.getSource('units'));
+            
             map.addLayer({
               id: "units-fill",
               type: "fill-extrusion",
