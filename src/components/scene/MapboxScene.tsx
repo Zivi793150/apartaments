@@ -3,6 +3,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
+// Import Mapbox Style type
+import type { Style as MapboxStyle } from 'mapbox-gl';
+
 // Helper function to sanitize mapbox style expressions
 const sanitizeExpression = (expr: any): any => {
   if (!Array.isArray(expr)) return expr;
@@ -190,14 +193,16 @@ export default function MapboxScene({
     const loadMap = async () => {
       try {
         // Use a simpler default style to avoid style-related issues
-        const defaultStyle = {
+        const defaultStyle: MapboxStyle = {
           version: 8,
+          name: 'custom-style',
           sources: {
             'mapbox-streets': {
               type: 'vector',
               url: 'mapbox://mapbox.mapbox-streets-v8'
             }
           },
+          glyphs: 'mapbox://fonts/mapbox/{fontstack}/{range}.pbf',
           layers: [
             {
               id: 'background',
@@ -212,7 +217,7 @@ export default function MapboxScene({
               paint: { 'fill-color': '#a0c8f0' }
             }
           ]
-        };
+        } as const;
 
         if (!containerRef.current) return;
 
