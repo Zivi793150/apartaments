@@ -188,15 +188,33 @@ export default function MapboxScene({
             const min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02; // Отступ снизу
             const height = floor * FLOOR_HEIGHT_M - 0.02; // Высота пола с отступом сверху
             
+            // Проверяем и нормализуем координаты
+            const geometry = { ...f.geometry };
+            if (geometry && geometry.coordinates) {
+              // Убедимся, что координаты имеют правильный формат
+              if (geometry.type === 'Polygon' && Array.isArray(geometry.coordinates)) {
+                geometry.coordinates = geometry.coordinates.map((ring: any) => 
+                  ring.map((coord: any) => [
+                    parseFloat(coord[0]),
+                    parseFloat(coord[1])
+                  ])
+                );
+              }
+            }
+            
             const feature = {
               ...f,
+              geometry,
               properties: {
                 ...f.properties,
                 floor: floor,
                 id: f.properties?.id || `unit-${floor}-${idx}`,
                 status: f.properties?.status || 'available',
                 min_height: f.properties?.min_height || min_height,
-                height: f.properties?.height || height
+                height: f.properties?.height || height,
+                // Добавляем обязательные свойства для отображения
+                area: f.properties?.area || 50,
+                rooms: f.properties?.rooms || 2
               }
             };
             console.log(`Обработана квартира на этаже ${floor}:`, feature);
@@ -359,14 +377,17 @@ export default function MapboxScene({
               if (features.length > 0) {
                 const firstFeature = features[0];
                 console.log('Проверка данных первой квартиры:', {
-                  coordinates: firstFeature.geometry?.coordinates,
-                  properties: firstFeature.properties,
+                  coordinates: firstFeature.geometry?.coordinates?.[0]?.[0], // Берем только первую точку для логов
+                  properties: {
+                    ...firstFeature.properties,
+                    // Скрываем длинные массивы координат в логах
+                    coordinates: firstFeature.geometry?.coordinates ? '[...]' : 'undefined'
+                  },
                   hasMinHeight: 'min_height' in firstFeature.properties,
-                  hasHeight: 'height' in firstFeature.properties
+                  hasHeight: 'height' in firstFeature.properties,
+                  geometryType: firstFeature.geometry?.type
                 });
               }
-              
-              try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
             } else {
               unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
             }
@@ -385,13 +406,22 @@ export default function MapboxScene({
             // Проверяем, что источник добавлен
             console.log('Источник units добавлен:', map.getSource('units'));
             
-            map.addLayer({
-              id: "units-fill",
-              type: "fill-extrusion",
-              source: "units",
-              paint: {
-                "fill-extrusion-color": [
-                  "case",
+            // Добавляем слой с отладочной информацией
+            console.log('Добавляем слой units-fill с данными:', {
+              source: 'units',
+              featureCount: unitsSourceData.features.length,
+              firstFeature: unitsSourceData.features[0]
+            });
+            
+            try {
+              map.addLayer({
+                id: "units-fill",
+                type: "fill-extrusion",
+                source: "units",
+                minzoom: 15,
+                paint: {
+                  "fill-extrusion-color": [
+                    "case",
                     ["boolean", ["feature-state", "hover"], false], "#ff7f50",
                     ["match", ["get", "status"],
                       "sold", "#b8b8b8",
@@ -399,12 +429,17 @@ export default function MapboxScene({
                       "available", "#4fea98",
                       "#4fea98"
                     ]
-                ],
-                "fill-extrusion-height": ["get", "height"],
-                "fill-extrusion-base": ["get", "min_height"],
-                "fill-extrusion-opacity": 0.75,
-              }
-            });
+                  ],
+                  "fill-extrusion-height": ["get", "height"],
+                  "fill-extrusion-base": ["get", "min_height"],
+                  "fill-extrusion-opacity": 0.9,
+                  "fill-extrusion-vertical-gradient": true
+                }
+              });
+              console.log('Слой units-fill успешно добавлен');
+            } catch (e) {
+              console.error('Ошибка при добавлении слоя units-fill:', e);
+            }
             map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": [
               "case",
                 ["boolean", ["feature-state", "hover"], false], "#00ff00",
