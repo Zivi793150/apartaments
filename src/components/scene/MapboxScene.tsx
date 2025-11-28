@@ -97,7 +97,7 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   } as GeoJSON.FeatureCollection;
 }
 
-function MapboxScene({
+export default function MapboxScene({
   filter,
   onPick,
 }: {
@@ -180,97 +180,50 @@ function MapboxScene({
     return () => { mounted = false; };
   }, []);
 
+  const isInitialized = useRef(false);
+
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !token) return;
+    if (!containerRef.current || isInitialized.current || !token) return;
+    isInitialized.current = true;
     mapboxgl.accessToken = token;
 
     const loadMap = async () => {
       try {
-        const response = await fetch("https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token);
-        const styleJson = await response.json();
-
-        if (!Array.isArray(styleJson.layers)) {
-          console.error('Invalid style format: missing layers array');
-          return;
-        }
-
-        styleJson.layers = styleJson.layers.map((layer: any) => {
-          if (layer.id === 'place-labels' || layer.id.startsWith('place-')) {
-            return layer;
-          }
-
-          if (layer.paint) {
-            Object.keys(layer.paint).forEach((prop) => {
-              if (typeof layer.paint[prop] === 'object') {
-                layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
-              }
-            });
-          }
-
-          if (layer.layout) {
-            Object.keys(layer.layout).forEach((prop) => {
-              if (typeof layer.layout[prop] === 'object') {
-                layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
-              }
-            });
-          }
-
-          return layer;
-        });
+        // Use a simpler default style to avoid style-related issues
+        const defaultStyle = {
+          version: 8,
+          sources: {
+            'mapbox-streets': {
+              type: 'vector',
+              url: 'mapbox://mapbox.mapbox-streets-v8'
+            }
+          },
+          layers: [
+            {
+              id: 'background',
+              type: 'background',
+              paint: { 'background-color': '#f0f0f0' }
+            },
+            {
+              id: 'water',
+              source: 'mapbox-streets',
+              'source-layer': 'water',
+              type: 'fill',
+              paint: { 'fill-color': '#a0c8f0' }
+            }
+          ]
+        };
 
         if (!containerRef.current) return;
 
-        // Add error event listeners
-        const map = new mapboxgl.Map({
-          container: container,
-          style: styleJson,
-          center: center as LngLatLike,
-          zoom: 17.6,
-          pitch: 60,
-          bearing: -20,
-          antialias: true,
-          maxPitch: 85,
-          minZoom: 15,
-          maxZoom: 22,
-          failIfMajorPerformanceCaveat: false
-        });
-
-        // Add debug event listeners
-        map.on('load', () => {
-          console.log('Map loaded successfully');
-          setReady(true);
-        });
-
-        map.on('error', (e) => {
-          console.error('Map error:', e.error);
-          setError(e.error?.message || 'Failed to load map');
-        });
-
-        map.on('render', () => {
-          if (!ready) setReady(true);
-        });
-
-        // Store the map instance
-        mapRef.current = map;
-
-        // Add debug window reference
-        if (typeof window !== 'undefined') {
-          (window as any).__map = map;
+        // Clear any existing content in the container
+        while (containerRef.current.firstChild) {
+          containerRef.current.removeChild(containerRef.current.firstChild);
         }
 
-        // Cleanup function
-        return () => {
-          if (mapRef.current) {
-            try {
-              mapRef.current.remove();
-            } catch (e) {
-              console.error('Error cleaning up map:', e);
-            }
-            mapRef.current = null;
-          }
-        };
-          container: containerRef.current as HTMLElement,
-          style: styleJson,
+        const map = new mapboxgl.Map({
+          container: containerRef.current,
+          style: defaultStyle,
           center: center as LngLatLike,
           zoom: 17.6,
           pitch: 60,
