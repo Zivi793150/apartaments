@@ -169,12 +169,21 @@ export default function MapboxScene({
     let mounted = true;
     (async () => {
       try {
+        console.log('Loading units from /plans/geojson/units.geojson');
         const res = await fetch('/plans/geojson/units.geojson');
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.log('Units file not found, will generate units automatically');
+          return;
+        }
         const json = await res.json();
-        if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
+        console.log('Loaded units:', json);
+        if (mounted && json && json.type === 'FeatureCollection') {
+          setExternalUnits(json as GeoJSON.FeatureCollection);
+        } else {
+          console.warn('Invalid units format, will generate units automatically');
+        }
       } catch (e) {
-        // ignore
+        console.error('Error loading units:', e);
       }
     })();
     return () => { mounted = false; };
