@@ -226,6 +226,13 @@ export default function MapboxScene({
           containerRef.current.removeChild(containerRef.current.firstChild);
         }
 
+        // Ensure container has dimensions
+        if (containerRef.current) {
+          containerRef.current.style.width = '100%';
+          containerRef.current.style.height = '100%';
+        }
+
+        console.log('Creating map with center:', center);
         const map = new mapboxgl.Map({
           container: containerRef.current,
           style: defaultStyle,
@@ -237,10 +244,45 @@ export default function MapboxScene({
           maxPitch: 85,
           minZoom: 15,
           maxZoom: 22,
-          failIfMajorPerformanceCaveat: false
+          failIfMajorPerformanceCaveat: false,
+          // Add transformRequest to handle loading issues
+          transformRequest: (url, resourceType) => {
+            if (resourceType === 'Source' && url.startsWith('http')) {
+              return {
+                url: url,
+                headers: { 'Cache-Control': 'no-cache' }
+              };
+            }
+          }
         });
+        
         mapRef.current = map;
-        try { (window as any).__debugMap = map; } catch {}
+        
+        // Add error event listeners
+        map.on('error', (e) => {
+          console.error('Map error:', e);
+          setError('Failed to load map. Please try refreshing the page.');
+        });
+        
+        // Debug log map events
+        map.on('load', () => console.log('Map loaded successfully'));
+        map.on('render', () => {
+          if (!ready) {
+            console.log('Map rendered');
+            setReady(true);
+          }
+        });
+        
+        // Fallback in case map doesn't load
+        const loadTimeout = setTimeout(() => {
+          if (!ready) {
+            console.warn('Map load timeout, forcing ready state');
+            setReady(true);
+          }
+        }, 5000);
+        
+        // Clean up timeout
+        return () => clearTimeout(loadTimeout);
 
         map.on("load", () => {
           try {
