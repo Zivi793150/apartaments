@@ -3,6 +3,24 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
+// Helper function to sanitize mapbox style expressions
+export function sanitizeExpression(expr: any): any {
+  if (!Array.isArray(expr)) return expr;
+  
+  // Skip processing of feature sets and selectors
+  if (expr[0] === 'feature-set' || expr[0] === 'feature-state') {
+    return expr;
+  }
+  
+  // Handle get expressions
+  if (expr[0] === 'get' && expr[1] === 'sizerank') {
+    return ['coalesce', ['get', 'sizerank'], 0];
+  }
+  
+  // Recursively process array items
+  return expr.map((e: any) => sanitizeExpression(e));
+}
+
 export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
 export type MapboxSceneFilter = {
   activeBuilding: "all" | "a" | "b";
