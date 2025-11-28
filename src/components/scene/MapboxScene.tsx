@@ -97,7 +97,7 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   } as GeoJSON.FeatureCollection;
 }
 
-export default function MapboxScene({
+function MapboxScene({
   filter,
   onPick,
 }: {
@@ -220,7 +220,55 @@ export default function MapboxScene({
 
         if (!containerRef.current) return;
 
+        // Add error event listeners
         const map = new mapboxgl.Map({
+          container: container,
+          style: styleJson,
+          center: center as LngLatLike,
+          zoom: 17.6,
+          pitch: 60,
+          bearing: -20,
+          antialias: true,
+          maxPitch: 85,
+          minZoom: 15,
+          maxZoom: 22,
+          failIfMajorPerformanceCaveat: false
+        });
+
+        // Add debug event listeners
+        map.on('load', () => {
+          console.log('Map loaded successfully');
+          setReady(true);
+        });
+
+        map.on('error', (e) => {
+          console.error('Map error:', e.error);
+          setError(e.error?.message || 'Failed to load map');
+        });
+
+        map.on('render', () => {
+          if (!ready) setReady(true);
+        });
+
+        // Store the map instance
+        mapRef.current = map;
+
+        // Add debug window reference
+        if (typeof window !== 'undefined') {
+          (window as any).__map = map;
+        }
+
+        // Cleanup function
+        return () => {
+          if (mapRef.current) {
+            try {
+              mapRef.current.remove();
+            } catch (e) {
+              console.error('Error cleaning up map:', e);
+            }
+            mapRef.current = null;
+          }
+        };
           container: containerRef.current as HTMLElement,
           style: styleJson,
           center: center as LngLatLike,
