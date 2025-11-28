@@ -3,24 +3,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-// Helper function to sanitize mapbox style expressions
-const sanitizeExpression = (expr: any): any => {
-  if (!Array.isArray(expr)) return expr;
-  
-  // Skip processing of feature sets and selectors
-  if (expr[0] === 'feature-set' || expr[0] === 'feature-state') {
-    return expr;
-  }
-  
-  // Handle get expressions
-  if (expr[0] === 'get' && expr[1] === 'sizerank') {
-    return ['coalesce', ['get', 'sizerank'], 0];
-  }
-  
-  // Recursively process array items
-  return expr.map((e: any) => sanitizeExpression(e));
-};
-
 export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
 export type MapboxSceneFilter = {
   activeBuilding: "all" | "a" | "b";
@@ -45,8 +27,8 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const units: Unit[] = [];
   for (const f of floors) {
     try {
-      const filename = f === 1 ? '1floor' : `floor${f}`;
-      const res = await fetch(`/plans/geojson/${filename}.geojson`);
+      const floorFile = f === 1 ? '1floor' : `floor${f}`;
+      const res = await fetch(`/plans/geojson/${floorFile}.geojson`);
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && geojson.features) {
@@ -343,8 +325,7 @@ export default function MapboxScene({
         });
       } catch (err) {
         console.error('Failed to load map:', err);
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-        setError('Failed to load map. ' + errorMessage);
+        setError('Failed to load map. ' + (err.message || 'Please try again later.'));
       }
     };
 
