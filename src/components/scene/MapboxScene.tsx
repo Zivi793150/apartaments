@@ -184,13 +184,19 @@ export default function MapboxScene({
         
         if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) {
           const features = json.features.map((f: any, idx: number) => {
+            // Рассчитываем высоты для экструзии
+            const min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02; // Отступ снизу
+            const height = floor * FLOOR_HEIGHT_M - 0.02; // Высота пола с отступом сверху
+            
             const feature = {
               ...f,
               properties: {
                 ...f.properties,
                 floor: floor,
                 id: f.properties?.id || `unit-${floor}-${idx}`,
-                status: f.properties?.status || 'available'
+                status: f.properties?.status || 'available',
+                min_height: f.properties?.min_height || min_height,
+                height: f.properties?.height || height
               }
             };
             console.log(`Обработана квартира на этаже ${floor}:`, feature);
@@ -349,9 +355,15 @@ export default function MapboxScene({
               console.log('Создан unitsSourceData с количеством features:', features.length);
               console.log('Пример feature:', features[0]);
               
-              // Проверяем координаты
-              if (features.length > 0 && features[0].geometry && features[0].geometry.coordinates) {
-                console.log('Координаты первой квартиры:', features[0].geometry.coordinates);
+              // Проверяем координаты и свойства
+              if (features.length > 0) {
+                const firstFeature = features[0];
+                console.log('Проверка данных первой квартиры:', {
+                  coordinates: firstFeature.geometry?.coordinates,
+                  properties: firstFeature.properties,
+                  hasMinHeight: 'min_height' in firstFeature.properties,
+                  hasHeight: 'height' in firstFeature.properties
+                });
               }
               
               try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
@@ -363,8 +375,8 @@ export default function MapboxScene({
             
             // Удаляем существующий источник, если он есть
             if (map.getSource('units')) {
-              map.removeLayer('units-fill');
-              map.removeLayer('units-outline');
+              if (map.getLayer('units-fill')) map.removeLayer('units-fill');
+              if (map.getLayer('units-outline')) map.removeLayer('units-outline');
               map.removeSource('units');
             }
             
