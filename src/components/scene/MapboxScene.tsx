@@ -163,29 +163,59 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  
-  // Try to load optional units.geojson (pre-drawn apartment polygons) from public
+  // Загружаем данные о квартирах из файлов этажей
   useEffect(() => {
     let mounted = true;
-    (async () => {
+    
+    const loadFloorData = async (floor: number) => {
       try {
-        console.log('Loading units from /plans/geojson/units.geojson');
-        const res = await fetch('/plans/geojson/units.geojson');
+        const floorFile = floor === 1 ? '1floor' : `floor${floor}`;
+        const res = await fetch(`/plans/geojson/${floorFile}.geojson`);
         if (!res.ok) {
-          console.log('Units file not found, will generate units automatically');
-          return;
+          console.log(`Файл этажа ${floor} не найден, пропускаем`);
+          return [];
         }
         const json = await res.json();
-        console.log('Loaded units:', json);
-        if (mounted && json && json.type === 'FeatureCollection') {
-          setExternalUnits(json as GeoJSON.FeatureCollection);
-        } else {
-          console.warn('Invalid units format, will generate units automatically');
+        if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) {
+          return json.features.map((f: any, idx: number) => ({
+            ...f,
+            properties: {
+              ...f.properties,
+              floor: floor,
+              id: f.properties?.id || `unit-${floor}-${idx}`,
+              status: f.properties?.status || 'available'
+            }
+          }));
         }
       } catch (e) {
-        console.error('Error loading units:', e);
+        console.error(`Ошибка при загрузке этажа ${floor}:`, e);
+      }
+      return [];
+    };
+
+    (async () => {
+      try {
+        console.log('Начинаем загрузку данных этажей...');
+        const allFloorsData = await Promise.all(TEST_FLOORS.map(loadFloorData));
+        
+        if (!mounted) return;
+        
+        const allFeatures = allFloorsData.flat();
+        console.log(`Загружено ${allFeatures.length} квартир со всех этажей`);
+        
+        if (allFeatures.length > 0) {
+          setExternalUnits({
+            type: 'FeatureCollection',
+            features: allFeatures
+          });
+        } else {
+          console.log('Не удалось загрузить данные этажей, используем автоматическую генерацию');
+        }
+      } catch (e) {
+        console.error('Ошибка при загрузке данных этажей:', e);
       }
     })();
+    
     return () => { mounted = false; };
   }, []);
 
