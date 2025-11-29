@@ -110,13 +110,21 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
     features: units.map(u => {
       let geometry: GeoJSON.Geometry | null = null;
 
-      if (u.geometry && (u.geometry.type === "Polygon" || u.geometry.type === "MultiPolygon")) {
-        geometry = u.geometry;
+      if (u.geometry) {
+        if (u.geometry.type === "Polygon") {
+          geometry = u.geometry;
+        } else if (u.geometry.type === "MultiPolygon") {
+          const firstPolygon = (u.geometry.coordinates as [number, number][][][])[0];
+          if (firstPolygon) {
+            geometry = { type: "Polygon", coordinates: firstPolygon } as GeoJSON.Polygon;
+          }
+        }
       }
 
       if (!geometry && u.polyUV) {
         const ring = u.polyUV.map(p => uvToLngLat(p, quad));
         ring.push(ring[0]);
+
         geometry = { type: "Polygon", coordinates: [ring] } as GeoJSON.Polygon;
       }
 
@@ -131,6 +139,7 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
       const h = u.floor * FLOOR_HEIGHT_M - 0.02;
       return {
         type: "Feature",
+        id: u.id,
         properties: { id: u.id, floor: u.floor, status: u.status, area: u.area, rooms: u.rooms, min_height: min_h, height: h },
         geometry,
       };
@@ -237,29 +246,44 @@ export default function MapboxScene({
           return;
         }
 
-        styleJson.layers = styleJson.layers.map((layer: any) => {
-          if (layer.id === 'place-labels' || layer.id.startsWith('place-')) {
+        const problematicLayers = new Set([
+          'place-labels',
+          'place-city-sm',
+          'place-city-md',
+          'place-city-lg',
+          'place-town-sm',
+          'place-town-md',
+          'place-town-lg',
+          'place-village',
+          'place-hamlet',
+          'place-suburb'
+        ]);
+
+        styleJson.layers = styleJson.layers
+          .filter((layer: any) => !problematicLayers.has(layer.id))
+          .map((layer: any) => {
+            if (layer.id?.startsWith('place-')) {
+              return layer;
+            }
+
+            if (layer.paint) {
+              Object.keys(layer.paint).forEach((prop) => {
+                if (typeof layer.paint[prop] === 'object') {
+                  layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
+                }
+              });
+            }
+
+            if (layer.layout) {
+              Object.keys(layer.layout).forEach((prop) => {
+                if (typeof layer.layout[prop] === 'object') {
+                  layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
+                }
+              });
+            }
+
             return layer;
-          }
-
-          if (layer.paint) {
-            Object.keys(layer.paint).forEach((prop) => {
-              if (typeof layer.paint[prop] === 'object') {
-                layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
-              }
-            });
-          }
-
-          if (layer.layout) {
-            Object.keys(layer.layout).forEach((prop) => {
-              if (typeof layer.layout[prop] === 'object') {
-                layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
-              }
-            });
-          }
-
-          return layer;
-        });
+          });
 
         if (!containerRef.current) return;
 
