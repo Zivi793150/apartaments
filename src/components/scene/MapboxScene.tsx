@@ -163,11 +163,12 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  // Загружаем данные о квартирах из файлов этажей
-  useEffect(() => {
-    let mounted = true;
+  // Load floor data with retry logic
+  const loadFloorData = async (floor: number, attempt = 1): Promise<any[]> => {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 1000; // 1 second
     
-    const loadFloorData = async (floor: number) => {
+    try {
       try {
         const floorFile = floor === 1 ? '1floor' : `floor${floor}`;
         const url = `/plans/geojson/${floorFile}.geojson`;
@@ -176,11 +177,15 @@ export default function MapboxScene({
         const res = await fetch(url);
         if (!res.ok) {
           console.log(`Файл этажа ${floor} не найден, пропускаем`);
-          return [];
+          throw new Error(`Failed to load floor ${floor}: ${res.status}`);
         }
         
         const json = await res.json();
-        console.log(`Данные этажа ${floor}:`, json);
+        if (!json || json.type !== 'FeatureCollection' || !Array.isArray(json.features)) {
+          throw new Error(`Invalid GeoJSON format for floor ${floor}`);
+        }
+        
+        console.log(`Данные этажа ${floor} загружены, features:`, json.features.length);
         
         if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) {
           const features = json.features.map((f: any, idx: number) => {
@@ -222,29 +227,53 @@ export default function MapboxScene({
           });
           return features;
         }
-      } catch (e) {
-        console.error(`Ошибка при загрузке этажа ${floor}:`, e);
+      } catch (error) {
+        console.error(`Ошибка при загрузке этажа ${floor} (попытка ${attempt}):`, error);
+        
+        if (attempt < MAX_RETRIES) {
+          console.log(`Повторная попытка загрузки этажа ${floor} через ${RETRY_DELAY}мс...`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          return loadFloorData(floor, attempt + 1);
+        }
+        
+        console.error(`Не удалось загрузить этаж ${floor} после ${MAX_RETRIES} попыток`);
+        return [];
       }
+    } catch (e) {
+      console.error(`Ошибка при загрузке этажа ${floor}:`, e);
       return [];
-    };
+    }
+  };
 
+  // Load floor data
+  useEffect(() => {
+    let mounted = true;
+    
     (async () => {
       try {
         console.log('Начинаем загрузку данных этажей...');
-        const allFloorsData = await Promise.all(TEST_FLOORS.map(loadFloorData));
         
-        if (!mounted) return;
+        // Load floors sequentially to avoid overwhelming the server
+        const allFloorsData = [];
+        for (const floor of TEST_FLOORS) {
+          const floorData = await loadFloorData(floor);
+          allFloorsData.push(floorData);
+          if (!mounted) return;
+        }
         
         const allFeatures = allFloorsData.flat();
         console.log(`Загружено ${allFeatures.length} квартир со всех этажей`);
+        
+        if (allFeatures.length === 0) {
+          console.warn('Не загружено ни одной квартиры. Проверьте файлы GeoJSON.');
+          return;
+        }
         
         if (allFeatures.length > 0) {
           setExternalUnits({
             type: 'FeatureCollection',
             features: allFeatures
           });
-        } else {
-          console.log('Не удалось загрузить данные этажей, используем автоматическую генерацию');
         }
       } catch (e) {
         console.error('Ошибка при загрузке данных этажей:', e);
@@ -475,7 +504,7 @@ export default function MapboxScene({
         mapRef.current = null;
       }
     };
-  }, [token, center, footprint, units, onPick]);
+  }, [token, center, footprint, units, onPick, externalUnits]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
@@ -503,7 +532,12 @@ export default function MapboxScene({
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+      <div 
+        key="map-container"
+        ref={containerRef} 
+        className="h-full w-full" 
+        style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
+      />
       {!ready && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
           <div className="bg-white p-4 rounded-lg shadow-lg">
