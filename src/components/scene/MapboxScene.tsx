@@ -3,24 +3,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
-// Helper function to sanitize mapbox style expressions
-export function sanitizeExpression(expr: any): any {
-  if (!Array.isArray(expr)) return expr;
-  
-  // Skip processing of feature sets and selectors
-  if (expr[0] === 'feature-set' || expr[0] === 'feature-state') {
-    return expr;
-  }
-  
-  // Handle get expressions
-  if (expr[0] === 'get' && expr[1] === 'sizerank') {
-    return ['coalesce', ['get', 'sizerank'], 0];
-  }
-  
-  // Recursively process array items
-  return expr.map((e: any) => sanitizeExpression(e));
-}
-
 export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
 export type MapboxSceneFilter = {
   activeBuilding: "all" | "a" | "b";
@@ -29,15 +11,23 @@ export type MapboxSceneFilter = {
   hoverFloor?: number | null;
 };
 
+// Helper to sanitize style expressions from Mapbox standard style
+const sanitizeExpression = (expr: any): any => {
+  if (!Array.isArray(expr)) return expr;
+  if (expr[0] === "feature-set" || expr[0] === "feature-state") return expr;
+  if (expr[0] === "get" && expr[1] === "sizerank") {
+    return ["coalesce", ["get", "sizerank"], 0];
+  }
+  return expr.map((e: any) => sanitizeExpression(e));
+};
+
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
 
 const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
 const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
 
-
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
-
 
 // Парсинг geojson квартир
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
@@ -45,8 +35,9 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const units: Unit[] = [];
   for (const f of floors) {
     try {
-      const floorFile = f === 1 ? '1floor' : `floor${f}`;
-      const res = await fetch(`/plans/geojson/${floorFile}.geojson`);
+      const fileName = f === 1 ? "1floor" : `floor${f}`;
+      const res = await fetch(`/plans/geojson/${fileName}.geojson`);
+
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && geojson.features) {
@@ -163,123 +154,20 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  // Load floor data with retry logic
-  const loadFloorData = async (floor: number, attempt = 1): Promise<any[]> => {
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY = 1000; // 1 second
-    
-    try {
-      try {
-        const floorFile = floor === 1 ? '1floor' : `floor${floor}`;
-        const url = `/plans/geojson/${floorFile}.geojson`;
-        console.log(`Попытка загрузить этаж ${floor} из ${url}`);
-        
-        const res = await fetch(url);
-        if (!res.ok) {
-          console.log(`Файл этажа ${floor} не найден, пропускаем`);
-          throw new Error(`Failed to load floor ${floor}: ${res.status}`);
-        }
-        
-        const json = await res.json();
-        if (!json || json.type !== 'FeatureCollection' || !Array.isArray(json.features)) {
-          throw new Error(`Invalid GeoJSON format for floor ${floor}`);
-        }
-        
-        console.log(`Данные этажа ${floor} загружены, features:`, json.features.length);
-        
-        if (json && json.type === 'FeatureCollection' && Array.isArray(json.features)) {
-          const features = json.features.map((f: any, idx: number) => {
-            // Рассчитываем высоты для экструзии
-            const min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02; // Отступ снизу
-            const height = floor * FLOOR_HEIGHT_M - 0.02; // Высота пола с отступом сверху
-            
-            // Проверяем и нормализуем координаты
-            const geometry = { ...f.geometry };
-            if (geometry && geometry.coordinates) {
-              // Убедимся, что координаты имеют правильный формат
-              if (geometry.type === 'Polygon' && Array.isArray(geometry.coordinates)) {
-                geometry.coordinates = geometry.coordinates.map((ring: any) => 
-                  ring.map((coord: any) => [
-                    parseFloat(coord[0]),
-                    parseFloat(coord[1])
-                  ])
-                );
-              }
-            }
-            
-            const feature = {
-              ...f,
-              geometry,
-              properties: {
-                ...f.properties,
-                floor: floor,
-                id: f.properties?.id || `unit-${floor}-${idx}`,
-                status: f.properties?.status || 'available',
-                min_height: f.properties?.min_height || min_height,
-                height: f.properties?.height || height,
-                // Добавляем обязательные свойства для отображения
-                area: f.properties?.area || 50,
-                rooms: f.properties?.rooms || 2
-              }
-            };
-            console.log(`Обработана квартира на этаже ${floor}:`, feature);
-            return feature;
-          });
-          return features;
-        }
-      } catch (error) {
-        console.error(`Ошибка при загрузке этажа ${floor} (попытка ${attempt}):`, error);
-        
-        if (attempt < MAX_RETRIES) {
-          console.log(`Повторная попытка загрузки этажа ${floor} через ${RETRY_DELAY}мс...`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-          return loadFloorData(floor, attempt + 1);
-        }
-        
-        console.error(`Не удалось загрузить этаж ${floor} после ${MAX_RETRIES} попыток`);
-        return [];
-      }
-    } catch (e) {
-      console.error(`Ошибка при загрузке этажа ${floor}:`, e);
-      return [];
-    }
-  };
-
-  // Load floor data
+  
+  // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
-    
     (async () => {
       try {
-        console.log('Начинаем загрузку данных этажей...');
-        
-        // Load floors sequentially to avoid overwhelming the server
-        const allFloorsData = [];
-        for (const floor of TEST_FLOORS) {
-          const floorData = await loadFloorData(floor);
-          allFloorsData.push(floorData);
-          if (!mounted) return;
-        }
-        
-        const allFeatures = allFloorsData.flat();
-        console.log(`Загружено ${allFeatures.length} квартир со всех этажей`);
-        
-        if (allFeatures.length === 0) {
-          console.warn('Не загружено ни одной квартиры. Проверьте файлы GeoJSON.');
-          return;
-        }
-        
-        if (allFeatures.length > 0) {
-          setExternalUnits({
-            type: 'FeatureCollection',
-            features: allFeatures
-          });
-        }
+        const res = await fetch('/plans/geojson/units.geojson');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
       } catch (e) {
-        console.error('Ошибка при загрузке данных этажей:', e);
+        // ignore
       }
     })();
-    
     return () => { mounted = false; };
   }, []);
 
@@ -399,58 +287,18 @@ export default function MapboxScene({
                 return copy;
               });
               unitsSourceData = { type: 'FeatureCollection', features };
-              console.log('Создан unitsSourceData с количеством features:', features.length);
-              console.log('Пример feature:', features[0]);
-              
-              // Проверяем координаты и свойства
-              if (features.length > 0) {
-                const firstFeature = features[0];
-                console.log('Проверка данных первой квартиры:', {
-                  coordinates: firstFeature.geometry?.coordinates?.[0]?.[0], // Берем только первую точку для логов
-                  properties: {
-                    ...firstFeature.properties,
-                    // Скрываем длинные массивы координат в логах
-                    coordinates: firstFeature.geometry?.coordinates ? '[...]' : 'undefined'
-                  },
-                  hasMinHeight: 'min_height' in firstFeature.properties,
-                  hasHeight: 'height' in firstFeature.properties,
-                  geometryType: firstFeature.geometry?.type
-                });
-              }
+              try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
             } else {
               unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
             }
-            // Проверяем источник данных перед добавлением
-            console.log('Добавляем источник данных units:', unitsSourceData);
-            
-            // Удаляем существующий источник, если он есть
-            if (map.getSource('units')) {
-              if (map.getLayer('units-fill')) map.removeLayer('units-fill');
-              if (map.getLayer('units-outline')) map.removeLayer('units-outline');
-              map.removeSource('units');
-            }
-            
             map.addSource("units", { type: "geojson", data: unitsSourceData });
-            
-            // Проверяем, что источник добавлен
-            console.log('Источник units добавлен:', map.getSource('units'));
-            
-            // Добавляем слой с отладочной информацией
-            console.log('Добавляем слой units-fill с данными:', {
-              source: 'units',
-              featureCount: unitsSourceData.features.length,
-              firstFeature: unitsSourceData.features[0]
-            });
-            
-            try {
-              map.addLayer({
-                id: "units-fill",
-                type: "fill-extrusion",
-                source: "units",
-                minzoom: 15,
-                paint: {
-                  "fill-extrusion-color": [
-                    "case",
+            map.addLayer({
+              id: "units-fill",
+              type: "fill-extrusion",
+              source: "units",
+              paint: {
+                "fill-extrusion-color": [
+                  "case",
                     ["boolean", ["feature-state", "hover"], false], "#ff7f50",
                     ["match", ["get", "status"],
                       "sold", "#b8b8b8",
@@ -458,17 +306,12 @@ export default function MapboxScene({
                       "available", "#4fea98",
                       "#4fea98"
                     ]
-                  ],
-                  "fill-extrusion-height": ["get", "height"],
-                  "fill-extrusion-base": ["get", "min_height"],
-                  "fill-extrusion-opacity": 0.9,
-                  "fill-extrusion-vertical-gradient": true
-                }
-              });
-              console.log('Слой units-fill успешно добавлен');
-            } catch (e) {
-              console.error('Ошибка при добавлении слоя units-fill:', e);
-            }
+                ],
+                "fill-extrusion-height": ["get", "height"],
+                "fill-extrusion-base": ["get", "min_height"],
+                "fill-extrusion-opacity": 0.75,
+              }
+            });
             map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": [
               "case",
                 ["boolean", ["feature-state", "hover"], false], "#00ff00",
@@ -489,10 +332,9 @@ export default function MapboxScene({
             console.error('MapboxScene: error during map load:', e);
           }
         });
-      } catch (err: unknown) {
+      } catch (err) {
         console.error('Failed to load map:', err);
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-        setError('Failed to load map. ' + errorMessage);
+        setError('Failed to load map. ' + (err.message || 'Please try again later.'));
       }
     };
 
@@ -504,7 +346,7 @@ export default function MapboxScene({
         mapRef.current = null;
       }
     };
-  }, [token, center, footprint, units, onPick, externalUnits]);
+  }, [token, center, footprint, units, onPick]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
@@ -532,12 +374,7 @@ export default function MapboxScene({
 
   return (
     <div className="relative h-full w-full">
-      <div 
-        key="map-container"
-        ref={containerRef} 
-        className="h-full w-full" 
-        style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}
-      />
+      <div ref={containerRef} className="h-full w-full" />
       {!ready && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
           <div className="bg-white p-4 rounded-lg shadow-lg">
