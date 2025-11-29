@@ -27,7 +27,15 @@ const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
 const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
 
-type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
+type Unit = {
+  id: string;
+  floor: number;
+  status: "available" | "reserved" | "sold";
+  area: number;
+  rooms: number;
+  polyUV?: [number, number][];
+  geometry?: GeoJSON.Geometry;
+};
 
 const DEFAULT_UNIT_LAYOUT: [number, number][][] = [
   [[0, 0], [0.48, 0], [0.48, 0.48], [0, 0.48]],
@@ -69,18 +77,20 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
         for (const feat of geojson.features) {
           // предполагаем, что properties содержит нужные данные
           const props = feat.properties || {};
+          const floorValue = Number(props.floor ?? f) || f;
           units.push({
-            id: props.id || `${f}-${units.length+1}`,
-            floor: f,
+            id: props.id || `${floorValue}-${units.length+1}`,
+            floor: floorValue,
             status: props.status || "available",
             area: props.area || 40,
             rooms: props.rooms || 2,
-            polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0,0],[1,0],[1,1],[0,1]],
+            geometry: feat.geometry,
           });
         }
       }
     } catch {}
   }
+
   return units;
 }
 
@@ -98,8 +108,23 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   return {
     type: "FeatureCollection",
     features: units.map(u => {
-      const ring = u.polyUV.map(p => uvToLngLat(p, quad));
-      ring.push(ring[0]);
+      let geometry: GeoJSON.Geometry | null = null;
+
+      if (u.geometry && (u.geometry.type === "Polygon" || u.geometry.type === "MultiPolygon")) {
+        geometry = u.geometry;
+      }
+
+      if (!geometry && u.polyUV) {
+        const ring = u.polyUV.map(p => uvToLngLat(p, quad));
+        ring.push(ring[0]);
+        geometry = { type: "Polygon", coordinates: [ring] } as GeoJSON.Polygon;
+      }
+
+      if (!geometry) {
+        const defaultRing = DEFAULT_UNIT_LAYOUT[0].map(p => uvToLngLat(p as [number, number], quad));
+        defaultRing.push(defaultRing[0]);
+        geometry = { type: "Polygon", coordinates: [defaultRing] } as GeoJSON.Polygon;
+      }
       // place unit extrusion to occupy the whole floor height on the facade
       // add small epsilon inset to avoid z-fighting with building top/base
       const min_h = (u.floor - 1) * FLOOR_HEIGHT_M + 0.02;
@@ -107,7 +132,7 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
       return {
         type: "Feature",
         properties: { id: u.id, floor: u.floor, status: u.status, area: u.area, rooms: u.rooms, min_height: min_h, height: h },
-        geometry: { type: "Polygon", coordinates: [ring] }
+        geometry,
       };
     })
   } as GeoJSON.FeatureCollection;
