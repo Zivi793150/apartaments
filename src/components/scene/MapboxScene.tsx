@@ -29,6 +29,31 @@ const UNITS_PER_FLOOR = 4;
 
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
 
+const DEFAULT_UNIT_LAYOUT: [number, number][][] = [
+  [[0, 0], [0.48, 0], [0.48, 0.48], [0, 0.48]],
+  [[0.52, 0], [1, 0], [1, 0.48], [0.52, 0.48]],
+  [[0, 0.52], [0.48, 0.52], [0.48, 1], [0, 1]],
+  [[0.52, 0.52], [1, 0.52], [1, 1], [0.52, 1]],
+];
+
+function generateSyntheticUnits(): Unit[] {
+  const statuses: Unit["status"][] = ["available", "reserved", "sold"];
+  const units: Unit[] = [];
+  for (const floor of TEST_FLOORS) {
+    DEFAULT_UNIT_LAYOUT.forEach((poly, idx) => {
+      units.push({
+        id: `${floor}-${idx + 1}`,
+        floor,
+        status: statuses[idx % statuses.length],
+        area: 45 + idx * 5,
+        rooms: (idx % 3) + 1,
+        polyUV: poly as [number, number][],
+      });
+    });
+  }
+  return units;
+}
+
 // Парсинг geojson квартир
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const floors = TEST_FLOORS;
@@ -159,10 +184,15 @@ export default function MapboxScene({
     (async () => {
       try {
         const loaded = await loadUnitsFromGeojson();
-        if (mounted) setUnits(loaded);
+        if (!mounted) return;
+        if (loaded.length) {
+          setUnits(loaded);
+        } else {
+          setUnits(generateSyntheticUnits());
+        }
       } catch (e) {
         console.warn('MapboxScene: failed to load per-floor geojson, falling back to synthetic units', e);
-        if (mounted) setUnits([]);
+        if (mounted) setUnits(generateSyntheticUnits());
       }
     })();
     return () => { mounted = false; };
