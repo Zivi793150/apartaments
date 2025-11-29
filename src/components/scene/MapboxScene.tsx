@@ -152,27 +152,24 @@ export default function MapboxScene({
   }, []);
 
   const [units, setUnits] = useState<Unit[]>([]);
-  const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  
-  // Try to load optional units.geojson (pre-drawn apartment polygons) from public
+  // Load apartment polygons for all floors from individual geojson files
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch('/plans/geojson/units.geojson');
-        if (!res.ok) return;
-        const json = await res.json();
-        if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
+        const loaded = await loadUnitsFromGeojson();
+        if (mounted) setUnits(loaded);
       } catch (e) {
-        // ignore
+        console.warn('MapboxScene: failed to load per-floor geojson, falling back to synthetic units', e);
+        if (mounted) setUnits([]);
       }
     })();
     return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !token) return;
+    if (!containerRef.current || mapRef.current || !token || units.length === 0) return;
     mapboxgl.accessToken = token;
 
     const loadMap = async () => {
@@ -278,20 +275,9 @@ export default function MapboxScene({
             map.addLayer({ id: "facade-balconies", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "balcony"], paint: { "fill-extrusion-color": "#e9e6e1", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 1 } });
 
             // Квартиры: добавляем source и слои (оставляем поверх фасада)
-            let unitsSourceData: GeoJSON.FeatureCollection;
-            if (externalUnits && externalUnits.type === 'FeatureCollection') {
-              // Ensure features have an id (Mapbox feature-state uses feature id)
-              const features = externalUnits.features.map((f: any, idx: number) => {
-                const copy = { ...f } as any;
-                if (typeof copy.id === 'undefined') copy.id = copy.properties && copy.properties.id ? String(copy.properties.id) : `ext-${idx}`;
-                return copy;
-              });
-              unitsSourceData = { type: 'FeatureCollection', features };
-              try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
-            } else {
-              unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
-            }
+            const unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
             map.addSource("units", { type: "geojson", data: unitsSourceData });
+
             map.addLayer({
               id: "units-fill",
               type: "fill-extrusion",
