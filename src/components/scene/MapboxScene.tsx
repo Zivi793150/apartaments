@@ -44,17 +44,6 @@ const DEFAULT_UNIT_LAYOUT: [number, number][][] = [
   [[0.52, 0.52], [1, 0.52], [1, 1], [0.52, 1]],
 ];
 
-type FloorImporter = () => Promise<GeoJSON.FeatureCollection | null>;
-
-const FLOOR_IMPORTERS: Record<number, FloorImporter> = {
-  1: () => import("../../../public/plans/geojson/floor1.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
-  2: () => import("../../../public/plans/geojson/floor2.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
-  3: () => import("../../../public/plans/geojson/floor3.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
-  4: () => import("../../../public/plans/geojson/floor4.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
-  5: () => import("../../../public/plans/geojson/floor5.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
-  6: () => import("../../../public/plans/geojson/floor6.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
-};
-
 async function loadFloorGeojson(floor: number) {
   const fileName = `floor${floor}`;
   try {
@@ -64,17 +53,7 @@ async function loadFloorGeojson(floor: number) {
       return json as GeoJSON.FeatureCollection;
     }
   } catch (e) {
-    try { console.warn(`MapboxScene: fetch failed for ${fileName}.geojson`, e); } catch {}
-  }
-
-  const importer = FLOOR_IMPORTERS[floor];
-  if (importer) {
-    try {
-      const json = await importer();
-      if (json) return json;
-    } catch (e) {
-      try { console.warn(`MapboxScene: bundled import failed for ${fileName}.geojson`, e); } catch {}
-    }
+    try { console.warn(`MapboxScene: failed to load ${fileName}.geojson`, e); } catch {}
   }
   return null;
 }
