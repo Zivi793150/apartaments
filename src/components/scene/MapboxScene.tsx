@@ -11,95 +11,53 @@ export type MapboxSceneFilter = {
   hoverFloor?: number | null;
 };
 
-// Helper to sanitize style expressions from Mapbox standard style
-const sanitizeExpression = (expr: any): any => {
-  if (!Array.isArray(expr)) return expr;
-  if (expr[0] === "feature-set" || expr[0] === "feature-state") return expr;
-  if (expr[0] === "get" && expr[1] === "sizerank") {
-    return ["coalesce", ["get", "sizerank"], 0];
-  }
-  return expr.map((e: any) => sanitizeExpression(e));
-};
-
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
 
 const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
 const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
 
-type Unit = {
-  id: string;
-  floor: number;
-  status: "available" | "reserved" | "sold";
-  area: number;
-  rooms: number;
-  polyUV?: [number, number][];
-  geometry?: GeoJSON.Geometry;
-};
-
-const DEFAULT_UNIT_LAYOUT: [number, number][][] = [
-  [[0, 0], [0.48, 0], [0.48, 0.48], [0, 0.48]],
-  [[0.52, 0], [1, 0], [1, 0.48], [0.52, 0.48]],
-  [[0, 0.52], [0.48, 0.52], [0.48, 1], [0, 1]],
-  [[0.52, 0.52], [1, 0.52], [1, 1], [0.52, 1]],
-];
-
-async function loadFloorGeojson(floor: number) {
-  const fileName = `floor${floor}`;
-  try {
-    const res = await fetch(`/plans/geojson/${fileName}.geojson`);
-    if (res.ok) {
-      const json = await res.json();
-      return json as GeoJSON.FeatureCollection;
-    }
-  } catch (e) {
-    try { console.warn(`MapboxScene: failed to load ${fileName}.geojson`, e); } catch {}
-  }
-  return null;
-}
-
-function generateSyntheticUnits(): Unit[] {
-  const statuses: Unit["status"][] = ["available", "reserved", "sold"];
-  const units: Unit[] = [];
-  for (const floor of TEST_FLOORS) {
-    DEFAULT_UNIT_LAYOUT.forEach((poly, idx) => {
-      units.push({
-        id: `${floor}-${idx + 1}`,
-        floor,
-        status: statuses[idx % statuses.length],
-        area: 45 + idx * 5,
-        rooms: (idx % 3) + 1,
-        polyUV: poly as [number, number][],
-      });
-    });
-  }
-  return units;
-}
+type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
 
 // Парсинг geojson квартир
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
+  const floors = TEST_FLOORS;
   const units: Unit[] = [];
-
-  for (const f of TEST_FLOORS) {
+  for (const f of floors) {
     try {
-      const geojson = await loadFloorGeojson(f);
-      if (!geojson || !Array.isArray(geojson.features)) continue;
+      const candidateFiles = [`floor${f}.geojson`, `${f}floor.geojson`];
+      let geojson: any = null;
+      for (const file of candidateFiles) {
+        try {
+          const res = await fetch(`/plans/geojson/${file}`);
+          if (!res.ok) continue;
+          geojson = await res.json();
+          break;
+        } catch {
+          continue;
+        }
+      }
+      if (!geojson || !geojson.features) continue;
 
       for (const feat of geojson.features) {
         const props = feat.properties || {};
-        const floorValue = Number(props.floor ?? f) || f;
         units.push({
-          id: props.id || `${floorValue}-${units.length + 1}`,
-          floor: floorValue,
-          status: (props.status as Unit["status"]) || "available",
-          area: Number(props.area) || 40,
-          rooms: Number(props.rooms) || 2,
-          geometry: feat.geometry,
+          id: props.id || `${f}-${units.length + 1}`,
+          floor: f,
+          status: props.status || "available",
+          area: props.area || 40,
+          rooms: props.rooms || 2,
+          polyUV:
+            feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) ||
+            [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+              [0, 1],
+            ],
         });
       }
-    } catch (e) {
-      console.warn(`MapboxScene: failed to load floor ${f} geojson`, e);
-    }
+    } catch {}
   }
 
   return units;
@@ -119,40 +77,16 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   return {
     type: "FeatureCollection",
     features: units.map(u => {
-      let geometry: GeoJSON.Geometry | null = null;
-
-      if (u.geometry) {
-        if (u.geometry.type === "Polygon") {
-          geometry = u.geometry;
-        } else if (u.geometry.type === "MultiPolygon") {
-          const firstPolygon = (u.geometry.coordinates as [number, number][][][])[0];
-          if (firstPolygon) {
-            geometry = { type: "Polygon", coordinates: firstPolygon } as GeoJSON.Polygon;
-          }
-        }
-      }
-
-      if (!geometry && u.polyUV) {
-        const ring = u.polyUV.map(p => uvToLngLat(p, quad));
-        ring.push(ring[0]);
-
-        geometry = { type: "Polygon", coordinates: [ring] } as GeoJSON.Polygon;
-      }
-
-      if (!geometry) {
-        const defaultRing = DEFAULT_UNIT_LAYOUT[0].map(p => uvToLngLat(p as [number, number], quad));
-        defaultRing.push(defaultRing[0]);
-        geometry = { type: "Polygon", coordinates: [defaultRing] } as GeoJSON.Polygon;
-      }
+      const ring = u.polyUV.map(p => uvToLngLat(p, quad));
+      ring.push(ring[0]);
       // place unit extrusion to occupy the whole floor height on the facade
       // add small epsilon inset to avoid z-fighting with building top/base
       const min_h = (u.floor - 1) * FLOOR_HEIGHT_M + 0.02;
       const h = u.floor * FLOOR_HEIGHT_M - 0.02;
       return {
         type: "Feature",
-        id: u.id,
         properties: { id: u.id, floor: u.floor, status: u.status, area: u.area, rooms: u.rooms, min_height: min_h, height: h },
-        geometry,
+        geometry: { type: "Polygon", coordinates: [ring] }
       };
     })
   } as GeoJSON.FeatureCollection;
@@ -222,38 +156,68 @@ export default function MapboxScene({
   }, []);
 
   const [units, setUnits] = useState<Unit[]>([]);
+  const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  // Load apartment polygons for all floors from individual geojson files
+  
+  // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const loaded = await loadUnitsFromGeojson();
-        if (!mounted) return;
-        if (loaded.length) {
-          setUnits(loaded);
-        } else {
-          setUnits(generateSyntheticUnits());
-        }
+        const res = await fetch('/plans/geojson/units.geojson');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
       } catch (e) {
-        console.warn('MapboxScene: failed to load per-floor geojson, falling back to synthetic units', e);
-        if (mounted) setUnits(generateSyntheticUnits());
+        // ignore
       }
     })();
     return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !token || units.length === 0) return;
+    if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
     const loadMap = async () => {
       try {
+        const response = await fetch("https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token);
+        const styleJson = await response.json();
+
+        if (!Array.isArray(styleJson.layers)) {
+          console.error('Invalid style format: missing layers array');
+          return;
+        }
+
+        styleJson.layers = styleJson.layers.map((layer: any) => {
+          if (layer.id === 'place-labels' || layer.id.startsWith('place-')) {
+            return layer;
+          }
+
+          if (layer.paint) {
+            Object.keys(layer.paint).forEach((prop) => {
+              if (typeof layer.paint[prop] === 'object') {
+                layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
+              }
+            });
+          }
+
+          if (layer.layout) {
+            Object.keys(layer.layout).forEach((prop) => {
+              if (typeof layer.layout[prop] === 'object') {
+                layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
+              }
+            });
+          }
+
+          return layer;
+        });
+
         if (!containerRef.current) return;
 
         const map = new mapboxgl.Map({
           container: containerRef.current as HTMLElement,
-          style: "mapbox://styles/mapbox/light-v11",
+          style: styleJson,
           center: center as LngLatLike,
           zoom: 17.6,
           pitch: 60,
@@ -318,9 +282,20 @@ export default function MapboxScene({
             map.addLayer({ id: "facade-balconies", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "balcony"], paint: { "fill-extrusion-color": "#e9e6e1", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 1 } });
 
             // Квартиры: добавляем source и слои (оставляем поверх фасада)
-            const unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
+            let unitsSourceData: GeoJSON.FeatureCollection;
+            if (externalUnits && externalUnits.type === 'FeatureCollection') {
+              // Ensure features have an id (Mapbox feature-state uses feature id)
+              const features = externalUnits.features.map((f: any, idx: number) => {
+                const copy = { ...f } as any;
+                if (typeof copy.id === 'undefined') copy.id = copy.properties && copy.properties.id ? String(copy.properties.id) : `ext-${idx}`;
+                return copy;
+              });
+              unitsSourceData = { type: 'FeatureCollection', features };
+              try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
+            } else {
+              unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
+            }
             map.addSource("units", { type: "geojson", data: unitsSourceData });
-
             map.addLayer({
               id: "units-fill",
               type: "fill-extrusion",
@@ -363,8 +338,7 @@ export default function MapboxScene({
         });
       } catch (err) {
         console.error('Failed to load map:', err);
-        const msg = err instanceof Error ? err.message : '';
-        setError('Failed to load map. ' + (msg || 'Please try again later.'));
+        setError('Failed to load map. ' + (err.message || 'Please try again later.'));
       }
     };
 
