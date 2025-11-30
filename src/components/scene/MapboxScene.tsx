@@ -47,12 +47,12 @@ const DEFAULT_UNIT_LAYOUT: [number, number][][] = [
 type FloorImporter = () => Promise<GeoJSON.FeatureCollection | null>;
 
 const FLOOR_IMPORTERS: Record<number, FloorImporter> = {
-  1: () => fetch("/plans/geojson/floor1.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
-  2: () => fetch("/plans/geojson/floor2.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
-  3: () => fetch("/plans/geojson/floor3.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
-  4: () => fetch("/plans/geojson/floor4.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
-  5: () => fetch("/plans/geojson/floor5.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
-  6: () => fetch("/plans/geojson/floor6.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
+  1: () => import("../../../public/plans/geojson/floor1.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
+  2: () => import("../../../public/plans/geojson/floor2.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
+  3: () => import("../../../public/plans/geojson/floor3.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
+  4: () => import("../../../public/plans/geojson/floor4.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
+  5: () => import("../../../public/plans/geojson/floor5.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
+  6: () => import("../../../public/plans/geojson/floor6.geojson").then(m => (m as any).default ?? m ?? null).catch(() => null),
 };
 
 async function loadFloorGeojson(floor: number) {
@@ -99,29 +99,28 @@ function generateSyntheticUnits(): Unit[] {
 
 // Парсинг geojson квартир
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
-  const floors = TEST_FLOORS;
   const units: Unit[] = [];
-  for (const f of floors) {
+
+  for (const f of TEST_FLOORS) {
     try {
-      const fileName = `floor${f}`;
-      const res = await fetch(`/plans/geojson/${fileName}.geojson`);
-      if (!res.ok) continue;
-      const geojson = await res.json();
-      if (geojson && Array.isArray(geojson.features)) {
-        for (const feat of geojson.features) {
-          const props = feat.properties || {};
-          const floorValue = Number(props.floor ?? f) || f;
-          units.push({
-            id: props.id || `${floorValue}-${units.length+1}`,
-            floor: floorValue,
-            status: props.status || "available",
-            area: props.area || 40,
-            rooms: props.rooms || 2,
-            geometry: feat.geometry,
-          });
-        }
+      const geojson = await loadFloorGeojson(f);
+      if (!geojson || !Array.isArray(geojson.features)) continue;
+
+      for (const feat of geojson.features) {
+        const props = feat.properties || {};
+        const floorValue = Number(props.floor ?? f) || f;
+        units.push({
+          id: props.id || `${floorValue}-${units.length + 1}`,
+          floor: floorValue,
+          status: (props.status as Unit["status"]) || "available",
+          area: Number(props.area) || 40,
+          rooms: Number(props.rooms) || 2,
+          geometry: feat.geometry,
+        });
       }
-    } catch {}
+    } catch (e) {
+      console.warn(`MapboxScene: failed to load floor ${f} geojson`, e);
+    }
   }
 
   return units;
