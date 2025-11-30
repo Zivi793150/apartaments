@@ -68,7 +68,8 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const units: Unit[] = [];
   for (const f of floors) {
     try {
-      const fileName = f === 1 ? "1floor" : `floor${f}`;
+      const fileName = `floor${f}`;
+
       const res = await fetch(`/plans/geojson/${fileName}.geojson`);
 
       if (!res.ok) continue;
