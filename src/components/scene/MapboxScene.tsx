@@ -44,6 +44,41 @@ const DEFAULT_UNIT_LAYOUT: [number, number][][] = [
   [[0.52, 0.52], [1, 0.52], [1, 1], [0.52, 1]],
 ];
 
+type FloorImporter = () => Promise<GeoJSON.FeatureCollection | null>;
+
+const FLOOR_IMPORTERS: Record<number, FloorImporter> = {
+  1: () => fetch("/plans/geojson/floor1.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
+  2: () => fetch("/plans/geojson/floor2.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
+  3: () => fetch("/plans/geojson/floor3.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
+  4: () => fetch("/plans/geojson/floor4.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
+  5: () => fetch("/plans/geojson/floor5.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
+  6: () => fetch("/plans/geojson/floor6.geojson").then(res => res.json() as Promise<GeoJSON.FeatureCollection>),
+};
+
+async function loadFloorGeojson(floor: number) {
+  const fileName = `floor${floor}`;
+  try {
+    const res = await fetch(`/plans/geojson/${fileName}.geojson`);
+    if (res.ok) {
+      const json = await res.json();
+      return json as GeoJSON.FeatureCollection;
+    }
+  } catch (e) {
+    try { console.warn(`MapboxScene: fetch failed for ${fileName}.geojson`, e); } catch {}
+  }
+
+  const importer = FLOOR_IMPORTERS[floor];
+  if (importer) {
+    try {
+      const json = await importer();
+      if (json) return json;
+    } catch (e) {
+      try { console.warn(`MapboxScene: bundled import failed for ${fileName}.geojson`, e); } catch {}
+    }
+  }
+  return null;
+}
+
 function generateSyntheticUnits(): Unit[] {
   const statuses: Unit["status"][] = ["available", "reserved", "sold"];
   const units: Unit[] = [];
@@ -69,14 +104,11 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   for (const f of floors) {
     try {
       const fileName = `floor${f}`;
-
       const res = await fetch(`/plans/geojson/${fileName}.geojson`);
-
       if (!res.ok) continue;
       const geojson = await res.json();
-      if (geojson && geojson.features) {
+      if (geojson && Array.isArray(geojson.features)) {
         for (const feat of geojson.features) {
-          // предполагаем, что properties содержит нужные данные
           const props = feat.properties || {};
           const floorValue = Number(props.floor ?? f) || f;
           units.push({
