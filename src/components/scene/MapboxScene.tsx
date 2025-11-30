@@ -22,7 +22,7 @@ const sanitizeExpression = (expr: any): any => {
 
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
 
-const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
+const TEST_FLOORS = [1, 2, 3, 4, 5, 6]; // Load additional floors
 const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
 
@@ -94,6 +94,68 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   } as GeoJSON.FeatureCollection;
 }
 
+function getSafeFloor(value: unknown): number {
+  const num = typeof value === "number" ? value : parseInt(String(value ?? ""), 10);
+  return Number.isFinite(num) && num > 0 ? num : 1;
+}
+
+function closeLinearRing(ring: GeoJSON.Position[]) {
+  if (!ring.length) return ring;
+  const first = ring[0] as GeoJSON.Position;
+  const last = ring[ring.length - 1] as GeoJSON.Position;
+  if (first[0] === last[0] && first[1] === last[1]) return ring;
+  return [...ring, ring[0]] as GeoJSON.Position[];
+}
+
+function normalizeExternalUnitFeature(feature: GeoJSON.Feature, idx: number): GeoJSON.Feature {
+  const props = feature.properties || {};
+  const floor = getSafeFloor(props.floor ?? props.level ?? props.storey ?? props.etage);
+  const min_height = typeof props.min_height === "number" ? props.min_height : (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+  const height = typeof props.height === "number" ? props.height : floor * FLOOR_HEIGHT_M - 0.02;
+  const status = props.status || "available";
+  const rooms = props.rooms || props.bedrooms || 2;
+  const area = props.area || props.square || 40;
+
+  let geometry = feature.geometry;
+  if (geometry?.type === "Polygon") {
+    const coords = geometry.coordinates as GeoJSON.Position[][];
+    geometry = {
+      ...geometry,
+      coordinates: coords.map((ring) => closeLinearRing(ring)) as GeoJSON.Position[][],
+    } as GeoJSON.Polygon;
+  } else if (geometry?.type === "MultiPolygon") {
+    const coords = geometry.coordinates as GeoJSON.Position[][][];
+    geometry = {
+      ...geometry,
+      coordinates: coords.map((poly) => poly.map((ring) => closeLinearRing(ring))) as GeoJSON.Position[][][],
+    } as GeoJSON.MultiPolygon;
+  }
+
+  return {
+    type: "Feature",
+    id: feature.id ?? props.id ?? `ext-${idx}`,
+    geometry,
+    properties: {
+      ...props,
+      id: props.id ?? feature.id ?? `ext-${idx}`,
+      floor,
+      min_height,
+      height,
+      status,
+      rooms,
+      area,
+    },
+  } as GeoJSON.Feature;
+}
+
+function normalizeExternalUnitsCollection(collection: GeoJSON.FeatureCollection | null): GeoJSON.FeatureCollection | null {
+  if (!collection || collection.type !== "FeatureCollection") return null;
+  return {
+    type: "FeatureCollection",
+    features: collection.features.map((feat, idx) => normalizeExternalUnitFeature(feat, idx)),
+  } as GeoJSON.FeatureCollection;
+}
+
 export default function MapboxScene({
   filter,
   onPick,
@@ -160,7 +222,19 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const loaded = await loadUnitsFromGeojson();
+        if (mounted) setUnits(loaded);
+      } catch (e) {
+        console.warn('MapboxScene: failed to load internal units geojson', e);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
@@ -169,7 +243,9 @@ export default function MapboxScene({
         const res = await fetch('/plans/geojson/units.geojson');
         if (!res.ok) return;
         const json = await res.json();
-        if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
+        if (mounted && json && json.type === 'FeatureCollection') {
+          setExternalUnits(normalizeExternalUnitsCollection(json as GeoJSON.FeatureCollection));
+        }
       } catch (e) {
         // ignore
       }
@@ -286,14 +362,8 @@ export default function MapboxScene({
             // Квартиры: добавляем source и слои (оставляем поверх фасада)
             let unitsSourceData: GeoJSON.FeatureCollection;
             if (externalUnits && externalUnits.type === 'FeatureCollection') {
-              // Ensure features have an id (Mapbox feature-state uses feature id)
-              const features = externalUnits.features.map((f: any, idx: number) => {
-                const copy = { ...f } as any;
-                if (typeof copy.id === 'undefined') copy.id = copy.properties && copy.properties.id ? String(copy.properties.id) : `ext-${idx}`;
-                return copy;
-              });
-              unitsSourceData = { type: 'FeatureCollection', features };
-              try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
+              unitsSourceData = externalUnits;
+              try { console.info('MapboxScene: using external units.geojson with', externalUnits.features.length, 'features'); } catch {}
             } else {
               unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
             }
@@ -353,9 +423,19 @@ export default function MapboxScene({
         mapRef.current = null;
       }
     };
-  }, [token, center, footprint, units, onPick]);
+  }, [token, center, footprint, units, externalUnits, onPick]);
 
-  // Применение фильтра (available/rooms/floor)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const unitsSource = map.getSource('units') as GeoJSONSource | undefined;
+    if (!unitsSource) return;
+    const data = externalUnits && externalUnits.type === 'FeatureCollection'
+      ? externalUnits
+      : makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
+    unitsSource.setData(data);
+  }, [externalUnits, units, footprint]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
