@@ -11,6 +11,15 @@ export type MapboxSceneFilter = {
   hoverFloor?: number | null;
 };
 
+const sanitizeExpression = (expr: any): any => {
+  if (!Array.isArray(expr)) return expr;
+  if (expr[0] === "feature-set" || expr[0] === "feature-state") return expr;
+  if (expr[0] === "get" && expr[1] === "sizerank") {
+    return ["coalesce", ["get", "sizerank"], 0];
+  }
+  return expr.map((e: any) => sanitizeExpression(e));
+};
+
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
 
 const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
