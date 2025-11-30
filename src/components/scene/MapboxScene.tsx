@@ -239,58 +239,11 @@ export default function MapboxScene({
 
     const loadMap = async () => {
       try {
-        const response = await fetch("https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token);
-        const styleJson = await response.json();
-
-        if (!Array.isArray(styleJson.layers)) {
-          console.error('Invalid style format: missing layers array');
-          return;
-        }
-
-        const problematicLayers = new Set([
-          'place-labels',
-          'place-city-sm',
-          'place-city-md',
-          'place-city-lg',
-          'place-town-sm',
-          'place-town-md',
-          'place-town-lg',
-          'place-village',
-          'place-hamlet',
-          'place-suburb'
-        ]);
-
-        styleJson.layers = styleJson.layers
-          .filter((layer: any) => !problematicLayers.has(layer.id))
-          .map((layer: any) => {
-            if (layer.id?.startsWith('place-')) {
-              return layer;
-            }
-
-            if (layer.paint) {
-              Object.keys(layer.paint).forEach((prop) => {
-                if (typeof layer.paint[prop] === 'object') {
-                  layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
-                }
-              });
-            }
-
-            if (layer.layout) {
-              Object.keys(layer.layout).forEach((prop) => {
-                if (typeof layer.layout[prop] === 'object') {
-                  layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
-                }
-              });
-            }
-
-            return layer;
-          });
-
         if (!containerRef.current) return;
 
         const map = new mapboxgl.Map({
           container: containerRef.current as HTMLElement,
-          style: styleJson,
+          style: "mapbox://styles/mapbox/light-v11",
           center: center as LngLatLike,
           zoom: 17.6,
           pitch: 60,
