@@ -24,42 +24,35 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const floors = TEST_FLOORS;
   const units: Unit[] = [];
   for (const f of floors) {
-    try {
-      const candidateFiles = [`floor${f}.geojson`, `${f}floor.geojson`];
-      let geojson: any = null;
-      for (const file of candidateFiles) {
-        try {
-          const res = await fetch(`/plans/geojson/${file}`);
-          if (!res.ok) continue;
-          geojson = await res.json();
-          break;
-        } catch {
-          continue;
-        }
-      }
-      if (!geojson || !geojson.features) continue;
+    const candidateFiles = [`floor${f}.geojson`];
+    if (f === 1) candidateFiles.push('1floor.geojson'); // backwards compatibility
 
-      for (const feat of geojson.features) {
-        const props = feat.properties || {};
-        units.push({
-          id: props.id || `${f}-${units.length + 1}`,
-          floor: f,
-          status: props.status || "available",
-          area: props.area || 40,
-          rooms: props.rooms || 2,
-          polyUV:
-            feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) ||
-            [
-              [0, 0],
-              [1, 0],
-              [1, 1],
-              [0, 1],
-            ],
-        });
+    let geojson: any = null;
+    for (const file of candidateFiles) {
+      try {
+        const res = await fetch(`/plans/geojson/${file}`);
+        if (!res.ok) continue;
+        geojson = await res.json();
+        break;
+      } catch {
+        continue;
       }
-    } catch {}
+    }
+
+    if (!geojson || !geojson.features) continue;
+
+    for (const feat of geojson.features) {
+      const props = feat.properties || {};
+      units.push({
+        id: props.id || `${f}-${units.length + 1}`,
+        floor: f,
+        status: props.status || "available",
+        area: props.area || 40,
+        rooms: props.rooms || 2,
+        polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0, 0], [1, 0], [1, 1], [0, 1]],
+      });
+    }
   }
-
   return units;
 }
 
