@@ -13,70 +13,40 @@ export type MapboxSceneFilter = {
 
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
 
-const DEFAULT_FLOOR_COUNT = 6;
+const DEFAULT_FLOORS = [1, 2, 3, 4, 5, 6];
 const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
 
-// Парсинг geojson квартир
-async function loadFloorFeatureCollection(floorCount: number): Promise<GeoJSON.FeatureCollection | null> {
-  const features: GeoJSON.Feature[] = [];
-  for (let floor = 1; floor <= floorCount; floor++) {
-    try {
-      const res = await fetch(`/plans/geojson/floor${floor}.geojson`);
-      if (!res.ok) continue;
-      const json = await res.json();
-      if (!json || !Array.isArray(json.features)) continue;
-      json.features.forEach((feature: any, idx: number) => {
-        if (!feature || !feature.geometry) return;
-        const props = { ...(feature.properties || {}) } as any;
-        const derivedFloor = Number.isFinite(props.floor) ? Number(props.floor) : floor;
-        const normalizedStatus = STATUS_MAP[String(props.status || 'available').toLowerCase()] || 'available';
-        props.floor = derivedFloor;
-        props.status = normalizedStatus;
-        props.area = Number(props.area) || 40;
-        props.rooms = Number(props.rooms) || 2;
-        props.min_height = (derivedFloor - 1) * FLOOR_HEIGHT_M + 0.02;
-        props.height = derivedFloor * FLOOR_HEIGHT_M - 0.02;
-        if (!props.id) props.id = feature.id ? String(feature.id) : `floor-${derivedFloor}-${idx}`;
-        const geometry = { ...feature.geometry };
-        if (geometry.type === 'MultiPolygon') {
-          geometry.coordinates = geometry.coordinates.map((poly: number[][][]) =>
-            poly.map((ring: number[][]) => {
-              if (!ring.length) return ring;
-              const [firstLng, firstLat] = ring[0];
-              const [lastLng, lastLat] = ring[ring.length - 1];
-              if (firstLng !== lastLng || firstLat !== lastLat) {
-                return [...ring, ring[0]];
-              }
-              return ring;
-            })
-          );
-        }
-        features.push({
-          type: 'Feature',
-          id: String(props.id),
-          properties: props,
-          geometry,
-        } as GeoJSON.Feature);
-      });
-    } catch (error) {
-      try { console.warn(`MapboxScene: failed to load floor geojson for floor ${floor}`, error); } catch {}
-    }
-  }
-  return features.length ? { type: 'FeatureCollection', features } : null;
-}
 
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
 
-const STATUS_MAP: Record<string, Unit["status"]> = {
-  available: "available",
-  aviable: "available",
-  free: "available",
-  reserved: "reserved",
-  booked: "reserved",
-  sold: "sold",
-  xz: "reserved",
-};
+
+// Парсинг geojson квартир
+async function loadUnitsFromGeojson(floors: number[] = DEFAULT_FLOORS): Promise<Unit[]> {
+  const units: Unit[] = [];
+  for (const f of floors) {
+    try {
+      const res = await fetch(`/plans/geojson/floor${f}.geojson`);
+      if (!res.ok) continue;
+      const geojson = await res.json();
+      if (geojson && geojson.features) {
+        for (const feat of geojson.features) {
+          // предполагаем, что properties содержит нужные данные
+          const props = feat.properties || {};
+          units.push({
+            id: props.id || `${f}-${units.length+1}`,
+            floor: f,
+            status: props.status || "available",
+            area: props.area || 40,
+            rooms: props.rooms || 2,
+            polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0,0],[1,0],[1,1],[0,1]],
+          });
+        }
+      }
+    } catch {}
+  }
+  return units;
+}
 
 // Билинейная проекция UV -> lngLat на четырехугольник (контур здания)
 function uvToLngLat(uv: [number, number], quad: [number, number][]) {
@@ -127,7 +97,7 @@ export default function MapboxScene({
   const mapRef = useRef<Map | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
-  const [floorCount, setFloorCount] = useState(DEFAULT_FLOOR_COUNT);
+  const [floorsCount, setFloorsCount] = useState<number>(DEFAULT_FLOORS.length);
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -166,9 +136,12 @@ export default function MapboxScene({
           if (f) quad = f.geometry.coordinates[0].slice(0,4) as any;
         }
         if (quad && mounted) setFootprint(quad);
-        if (quad && mounted) {
+        if (mounted) {
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
-          setFootprint(quad);
+          const floorsFromProps = Number(json?.properties?.floors);
+          if (Number.isFinite(floorsFromProps) && floorsFromProps > 0) {
+            setFloorsCount(prev => Math.max(prev, Math.floor(floorsFromProps)));
+          }
         }
       } catch (e) {
         try { console.warn('MapboxScene: failed to load /building-quad.json', e); } catch {}
@@ -178,42 +151,55 @@ export default function MapboxScene({
     return () => { mounted = false; };
   }, []);
 
+  const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  // Load per-floor apartment polygons exported from QGIS
+  // Fallback load of procedural floors if no external polygons
+  useEffect(() => {
+    let mounted = true;
+    loadUnitsFromGeojson().then((data) => {
+      if (!mounted) return;
+      setUnits(data);
+      const fallbackMax = data.reduce((max, unit) => Math.max(max, unit.floor), 0);
+      if (fallbackMax > 0) setFloorsCount(prev => Math.max(prev, fallbackMax));
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
+  // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const collection = await loadFloorFeatureCollection(floorCount);
-      if (mounted) {
-        setExternalUnits(collection);
-        if (collection && collection.features?.length) {
-          const highestFloor = collection.features.reduce((acc, feat: any) => {
-            const fl = Number(feat.properties?.floor);
-            return Number.isFinite(fl) ? Math.max(acc, fl) : acc;
-          }, DEFAULT_FLOOR_COUNT);
-          if (highestFloor > floorCount) {
-            setFloorCount(highestFloor);
-          }
-        }
+      try {
+        const res = await fetch('/plans/geojson/units.geojson');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
+      } catch (e) {
+        // ignore
       }
     })();
     return () => { mounted = false; };
-  }, [floorCount]);
+  }, []);
 
   useEffect(() => {
-    if (!token || !containerRef.current || mapRef.current) return;
+    if (!externalUnits) return;
+    const maxFloor = externalUnits.features.reduce((max: number, feature: any) => {
+      const f = Number(feature?.properties?.floor);
+      return Number.isFinite(f) ? Math.max(max, f) : max;
+    }, 0);
+    if (maxFloor > 0) setFloorsCount(prev => Math.max(prev, maxFloor));
+  }, [externalUnits]);
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
-    let cancelled = false;
-    const styleUrl = `https://api.mapbox.com/styles/v1/mapbox/standard?access_token=${token}`;
-
-    const init = async () => {
-      try {
-        const res = await fetch(styleUrl);
-        const styleJson = await res.json();
-        if (cancelled || !containerRef.current) return;
-
+    // --- Динамически загружаем и модифицируем Mapbox style JSON ---
+    const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
+    fetch(styleUrl)
+      .then(res => res.json())
+      .then((styleJson) => {
+        // Рекурсивно заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0]
         (styleJson.layers || []).forEach((layer: any) => {
           if (layer.paint) {
             Object.keys(layer.paint).forEach((prop) => {
@@ -227,8 +213,10 @@ export default function MapboxScene({
           }
         });
 
+        // Инициализируем карту с модифицированным стилем
+        if (!containerRef.current) return;
         const map = new mapboxgl.Map({
-          container: containerRef.current,
+          container: containerRef.current as HTMLElement,
           style: styleJson,
           center: center as LngLatLike,
           zoom: 17.6,
@@ -242,154 +230,209 @@ export default function MapboxScene({
 
         map.on("load", () => {
           try {
-            const polygonCoords = Array.isArray(footprint) && footprint.length >= 4 ? [...footprint, footprint[0]] : null;
-            let footprintSourceData;
-            if (polygonCoords && polygonCoords.every((p: any) => Array.isArray(p) && p.length === 2)) {
-              footprintSourceData = { type: "Feature", id: "building", properties: { floors: floorCount }, geometry: { type: "Polygon", coordinates: [polygonCoords as any] } };
-            } else {
-              const [lng, lat] = center;
-              const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
-              const dy = 0.00006;
-              const fallback = [
-                [lng - dx, lat + dy],
-                [lng + dx, lat + dy],
-                [lng + dx * 0.95, lat - dy],
-                [lng - dx * 0.95, lat - dy],
-              ];
-              footprintSourceData = { type: "Feature", id: "building", properties: { floors: floorCount }, geometry: { type: "Polygon", coordinates: [fallback.concat([fallback[0]])] } };
-              console.warn('MapboxScene: invalid footprint, using fallback rectangle');
+          // Наш дом: добавляем footprint и слой здания
+          const polygonCoords = Array.isArray(footprint) && footprint.length >= 4 ? [...footprint, footprint[0]] : null;
+          if (!polygonCoords) {
+            console.warn('MapboxScene: invalid footprint, falling back to generated rectangle', footprint);
+          }
+          // validate coordinates: each item should be [number, number]
+          const isValid = polygonCoords && polygonCoords.every((p: any) => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && typeof p[1] === 'number');
+          const usedPolygon = isValid ? polygonCoords : [...(typeof footprint !== 'undefined' ? footprint as any : []), (footprint as any)?.[0]];
+          try { console.info('MapboxScene: using polygon coords for building footprint:', usedPolygon); } catch {}
+          
+          // our building - slightly reduced height to avoid z-fighting with unit extrusions
+          // give the building feature an id so it can be targeted with feature-state
+          const FLOORS = Math.max(1, floorsCount);
+          if (isValid) {
+            map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
+          } else {
+            // fallback: build rectangle from center
+            const [lng, lat] = center;
+            const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
+            const dy = 0.00006;
+            const fallback = [
+              [lng - dx, lat + dy],
+              [lng + dx, lat + dy],
+              [lng + dx * 0.95, lat - dy],
+              [lng - dx * 0.95, lat - dy],
+            ];
+            map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [fallback.concat([fallback[0]])] } } });
+            console.info('MapboxScene: used fallback rectangle footprint', fallback);
+          }
+          // our building - slightly reduced height to avoid z-fighting with unit extrusions
+          // (source for our-footprint already added above depending on validity)
+          // building fill - color reacts to feature-state hover for highlight
+          map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ffd54d", "#EAECEF"], "fill-extrusion-height": ["-", ["*", ["get", "floors"], FLOOR_HEIGHT_M], 0.05], "fill-extrusion-opacity": 0.98 } });
+          // 2D outline of the building footprint (visible on map) which also highlights on hover
+          map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
+
+          // Add facade + balcony + glass approximation
+          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, Math.max(1, floorsCount));
+          map.addSource("facade", { type: "geojson", data: facadeFC });
+          // facade bands
+          map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
+
+          // glass panels (transparent)
+          map.addLayer({ id: "facade-glass", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "glass"], paint: { "fill-extrusion-color": "#a8d0ff", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.18 } });
+
+          // balconies
+          map.addLayer({ id: "facade-balconies", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "balcony"], paint: { "fill-extrusion-color": "#e9e6e1", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 1 } });
+
+          // Квартиры: добавляем source и слои (оставляем поверх фасада)
+          let unitsSourceData: GeoJSON.FeatureCollection;
+          if (externalUnits && externalUnits.type === 'FeatureCollection') {
+            // Ensure features have an id and extrusion heights (Mapbox feature-state uses feature id)
+            const features = externalUnits.features.map((f: any, idx: number) => {
+              const copy = { ...f } as any;
+              const props = { ...(copy.properties || {}) } as any;
+              const floor = Number(isFinite(props.floor) ? props.floor : 1);
+              const status = String(props.status || 'available').toLowerCase();
+              const statusMap: Record<string, Unit['status']> = {
+                available: 'available',
+                aviable: 'available',
+                free: 'available',
+                reserved: 'reserved',
+                booked: 'reserved',
+                sold: 'sold',
+                xz: 'reserved',
+              };
+              props.status = statusMap[status] || 'available';
+              props.min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+              props.height = floor * FLOOR_HEIGHT_M - 0.02;
+              props.floor = floor;
+              copy.properties = props;
+              if (typeof copy.id === 'undefined') {
+                copy.id = props.id ? String(props.id) : `ext-${idx}`;
+              }
+              if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
+                copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
+                  poly.map((ring: number[][]) => {
+                    if (!ring.length) return ring;
+                    const first = ring[0];
+                    const last = ring[ring.length - 1];
+                    if (first[0] !== last[0] || first[1] !== last[1]) {
+                      return [...ring, first];
+                    }
+                    return ring;
+                  })
+                );
+              }
+              return copy;
+            });
+            unitsSourceData = { type: 'FeatureCollection', features };
+            try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
+          } else {
+            unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
+          }
+
+          map.addSource("units", { type: "geojson", data: unitsSourceData });
+          map.addLayer({
+            id: "units-fill",
+            type: "fill-extrusion",
+            source: "units",
+            paint: {
+              "fill-extrusion-color": [
+                "case",
+                  ["boolean", ["feature-state", "hover"], false], "#ff7f50",
+                  ["match", ["get", "status"],
+                    "sold", "#b8b8b8",
+                    "reserved", "#ffcd3c",
+                    "available", "#4fea98",
+                    "#4fea98"
+                  ]
+              ],
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0.75,
             }
+          });
+          map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": [
+            "case",
+              ["boolean", ["feature-state", "hover"], false], "#00ff00",
+              "#2b2b2b"
+          ], "line-width": [
+            "case",
+              ["boolean", ["feature-state", "hover"], false], 4,
+              1
+          ] } });
 
-            map.addSource("our-footprint", { type: "geojson", data: footprintSourceData as any });
-            map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ffd54d", "#EAECEF"], "fill-extrusion-height": ["-", ["*", ["get", "floors"], FLOOR_HEIGHT_M], 0.05], "fill-extrusion-opacity": 0.98 } });
-            map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
+          // Center and zoom closer to the building so facade is visible
+          try {
+            map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+          } catch(e) {}
 
-            const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, floorCount);
-            map.addSource("facade", { type: "geojson", data: facadeFC });
-            map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
-            map.addLayer({ id: "facade-glass", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "glass"], paint: { "fill-extrusion-color": "#a8d0ff", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.18 } });
-            map.addLayer({ id: "facade-balconies", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "balcony"], paint: { "fill-extrusion-color": "#e9e6e1", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 1 } });
-
-            const unitsData = externalUnits ?? makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, []);
-            map.addSource("units", { type: "geojson", data: unitsData });
-            map.addLayer({
-              id: "units-fill",
-              type: "fill-extrusion",
-              source: "units",
-              paint: {
-                "fill-extrusion-color": [
-                  "case",
-                    ["boolean", ["feature-state", "hover"], false], "#ff7f50",
-                    ["match", ["get", "status"],
-                      "sold", "#b8b8b8",
-                      "reserved", "#ffcd3c",
-                      "available", "#4fea98",
-                      "#4fea98"
-                    ]
-                ],
-                "fill-extrusion-height": ["get", "height"],
-                "fill-extrusion-base": ["get", "min_height"],
-                "fill-extrusion-opacity": 0.75,
-              }
-            });
-            map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": [
-              "case",
-                ["boolean", ["feature-state", "hover"], false], "#00ff00",
-                "#2b2b2b"
-            ], "line-width": [
-              "case",
-                ["boolean", ["feature-state", "hover"], false], 4,
-                1
-            ] } });
-
-            try {
-              map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
-            } catch {}
-
-            let lastHoverId: string | null = null;
-            let lastBuildingHover = false;
-            map.on("mousemove", "units-fill", (e) => {
-              map.getCanvas().style.cursor = "pointer";
-              const f = e.features && e.features[0];
-              const tip = tipRef.current;
-              if (!f || !tip) return;
-              tip.style.display = "block";
-              tip.style.left = e.point.x + 12 + "px";
-              tip.style.top = e.point.y + 12 + "px";
-              const fid = typeof f.id !== 'undefined' ? String(f.id) : (f.properties?.id ? String(f.properties.id) : null);
-              const { floor, status, area, rooms } = f.properties as any;
-              tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
-              if (fid && lastHoverId !== fid) {
-                if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
-                map.setFeatureState({ source: "units", id: fid }, { hover: true });
-                lastHoverId = fid;
-              }
-              if (!lastBuildingHover) {
-                try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
-                lastBuildingHover = true;
-              }
-            });
-            map.on("mouseleave", "units-fill", () => {
-              map.getCanvas().style.cursor = "";
-              if (tipRef.current) tipRef.current.style.display = "none";
-              if (lastHoverId) {
-                map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
-                lastHoverId = null;
-              }
-              if (lastBuildingHover) {
-                try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
-                lastBuildingHover = false;
-              }
-            });
-            map.on("click", "units-fill", (e) => {
-              const f = e.features && e.features[0];
-              if (!f) return;
-              const fid = typeof f.id !== 'undefined' ? String(f.id) : (f.properties?.id ? String(f.properties.id) : null);
-              const { area, rooms } = f.properties as any;
-              onPick?.({ id: fid ?? null, area: Number(area), rooms: Number(rooms) });
-            });
-
-            map.on("mousemove", "our-bldg", () => {
-              map.getCanvas().style.cursor = "pointer";
-              try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
-            });
-            map.on("mouseleave", "our-bldg", () => {
-              map.getCanvas().style.cursor = "";
-              try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
-            });
-
-            setReady(true);
+          setReady(true);
           } catch (e) {
             console.error('MapboxScene: error during map load:', e);
           }
         });
-      } catch (error) {
-        console.error('MapboxScene: failed to init map', error);
-      }
-    };
+      let lastHoverId: string | null = null;
+      let lastBuildingHover = false;
+      map.on("mousemove", "units-fill", (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        const f = e.features && e.features[0];
+        const tip = tipRef.current;
+        if (!f || !tip) return;
+        tip.style.display = "block";
+        tip.style.left = e.point.x + 12 + "px";
+        tip.style.top = e.point.y + 12 + "px";
+        // prefer feature.id (required for feature-state), fallback to properties.id
+        const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
+        const { floor, status, area, rooms } = f.properties as any;
+        tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
+        // highlight hovered apartment
+        if (fid && lastHoverId !== fid) {
+          if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          map.setFeatureState({ source: "units", id: fid }, { hover: true });
+          lastHoverId = fid;
+        }
+        // also highlight building footprint while hovering an apartment
+        if (!lastBuildingHover) {
+          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+          lastBuildingHover = true;
+        }
+      });
+      map.on("mouseleave", "units-fill", () => {
+        map.getCanvas().style.cursor = "";
+        if (tipRef.current) tipRef.current.style.display = "none";
+        if (lastHoverId) {
+          map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          lastHoverId = null;
+        }
+        if (lastBuildingHover) {
+          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
+          lastBuildingHover = false;
+        }
+      });
+      map.on("click", "units-fill", (e) => {
+        const f = e.features && e.features[0];
+        if (!f) return;
+        const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
+        const { area, rooms } = f.properties as any;
+        onPick?.({ id: fid ?? (f.properties && f.properties.id) ?? null, area: Number(area), rooms: Number(rooms) });
+      });
 
-    init();
+      // hovering directly on the building extrusion toggles outline highlight as well
+      map.on("mousemove", "our-bldg", (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+      });
+      map.on("mouseleave", "our-bldg", () => {
+        map.getCanvas().style.cursor = "";
+        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
+      });
 
-    return () => {
-      cancelled = true;
-      mapRef.current?.remove();
-      mapRef.current = null;
-      setReady(false);
-    };
-  }, [token, center, footprint, floorCount, externalUnits, onPick]);
+      setReady(true);
+    });
 
-  useEffect(() => {
-    if (!ready || !externalUnits || !mapRef.current) return;
-    const source = mapRef.current.getSource("units") as GeoJSONSource | undefined;
-    if (source) {
-      source.setData(externalUnits);
-    }
-  }, [ready, externalUnits]);
+    return () => { mapRef.current?.remove(); };
+  }, [token, center, footprint, units, externalUnits, floorsCount, onPick]);
 
+  // Применение фильтра (available/rooms/floor)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const filters: any[] = ["all"];
+    const filters: any[] = ["all"]; // базовый фильтр для слоя
     if (filter.onlyAvailable) filters.push(["==", ["get", "status"], "available"]);
     if (filter.rooms) filters.push(["==", ["get", "rooms"], filter.rooms]);
     if (filter.hoverFloor) filters.push(["==", ["get", "floor"], filter.hoverFloor]);
