@@ -143,7 +143,6 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  
   // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
@@ -169,22 +168,15 @@ export default function MapboxScene({
       .then(res => res.json())
       .then((styleJson) => {
         // Рекурсивно заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0]
-        const sanitizeExpression = (expr: any): any => {
-          if (!Array.isArray(expr)) return expr;
-          if (expr.length === 2 && expr[0] === 'get' && expr[1] === 'sizerank') {
-            return ['coalesce', ['get', 'sizerank'], 0];
-          }
-          return expr.map((e: any) => sanitizeExpression(e));
-        };
         (styleJson.layers || []).forEach((layer: any) => {
           if (layer.paint) {
             Object.keys(layer.paint).forEach((prop) => {
-              layer.paint[prop] = sanitizeExpression(layer.paint[prop]);
+              layer.paint[prop] = sanitizeStyleExpression(layer.paint[prop]);
             });
           }
           if (layer.layout) {
             Object.keys(layer.layout).forEach((prop) => {
-              layer.layout[prop] = sanitizeExpression(layer.layout[prop]);
+              layer.layout[prop] = sanitizeStyleExpression(layer.layout[prop]);
             });
           }
         });
