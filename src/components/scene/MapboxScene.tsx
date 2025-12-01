@@ -59,6 +59,14 @@ function uvToLngLat(uv: [number, number], quad: [number, number][]) {
   return lerp(E, F, u) as [number, number];
 }
 
+function sanitizeStyleExpression(expr: any): any {
+  if (!Array.isArray(expr)) return expr;
+  if (expr.length === 2 && expr[0] === "get" && expr[1] === "sizerank") {
+    return ["coalesce", ["get", "sizerank"], 0];
+  }
+  return expr.map((e: any) => sanitizeStyleExpression(e));
+}
+
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   return {
     type: "FeatureCollection",
