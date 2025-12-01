@@ -205,12 +205,10 @@ export default function MapboxScene({
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
-    // --- Динамически загружаем и модифицируем Mapbox style JSON ---
     const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
     fetch(styleUrl)
       .then(res => res.json())
       .then((styleJson) => {
-        // Рекурсивно заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0]
         (styleJson.layers || []).forEach((layer: any) => {
           if (layer.paint) {
             Object.keys(layer.paint).forEach((prop) => {
@@ -224,8 +222,6 @@ export default function MapboxScene({
           }
         });
 
-        // Инициализируем карту с модифицированным стилем
-        if (!containerRef.current) return;
         const map = new mapboxgl.Map({
           container: containerRef.current as HTMLElement,
           style: styleJson,
@@ -240,19 +236,14 @@ export default function MapboxScene({
         try { (window as any).__debugMap = map; } catch {}
 
         map.on("load", () => {
-          try {
-          // Наш дом: добавляем footprint и слой здания
           const polygonCoords = Array.isArray(footprint) && footprint.length >= 4 ? [...footprint, footprint[0]] : null;
           if (!polygonCoords) {
             console.warn('MapboxScene: invalid footprint, falling back to generated rectangle', footprint);
           }
-          // validate coordinates: each item should be [number, number]
           const isValid = polygonCoords && polygonCoords.every((p: any) => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && typeof p[1] === 'number');
           const usedPolygon = isValid ? polygonCoords : [...(typeof footprint !== 'undefined' ? footprint as any : []), (footprint as any)?.[0]];
           try { console.info('MapboxScene: using polygon coords for building footprint:', usedPolygon); } catch {}
-          
-          // our building - slightly reduced height to avoid z-fighting with unit extrusions
-          // give the building feature an id so it can be targeted with feature-state
+
           const FLOORS = floorCount;
           if (isValid) {
             map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
@@ -335,94 +326,93 @@ export default function MapboxScene({
             map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
+          let lastHoverId: string | null = null;
+          let lastBuildingHover = false;
+          map.on("mousemove", "units-fill", (e) => {
+            map.getCanvas().style.cursor = "pointer";
+            const f = e.features && e.features[0];
+            const tip = tipRef.current;
+            if (!f || !tip) return;
+            tip.style.display = "block";
+            tip.style.left = e.point.x + 12 + "px";
+            tip.style.top = e.point.y + 12 + "px";
+            // prefer feature.id (required for feature-state), fallback to properties.id
+            const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
+            const { floor, status, area, rooms } = f.properties as any;
+            tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
+            // highlight hovered apartment
+            if (fid && lastHoverId !== fid) {
+              if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+              map.setFeatureState({ source: "units", id: fid }, { hover: true });
+              lastHoverId = fid;
+            }
+            // also highlight building footprint while hovering an apartment
+            if (!lastBuildingHover) {
+              try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+              lastBuildingHover = true;
+            }
+          });
+          map.on("mouseleave", "units-fill", () => {
+            map.getCanvas().style.cursor = "";
+            if (tipRef.current) tipRef.current.style.display = "none";
+            if (lastHoverId) {
+              map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+              lastHoverId = null;
+            }
+            if (lastBuildingHover) {
+              try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
+              lastBuildingHover = false;
+            }
+          });
+          map.on("click", "units-fill", (e) => {
+            const f = e.features && e.features[0];
+            if (!f) return;
+            const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
+            const { area, rooms } = f.properties as any;
+            onPick?.({ id: fid ?? (f.properties && f.properties.id) ?? null, area: Number(area), rooms: Number(rooms) });
+          });
+
+          // hovering directly on the building extrusion toggles outline highlight as well
+          map.on("mousemove", "our-bldg", (e) => {
+            map.getCanvas().style.cursor = "pointer";
+            try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+          });
+          map.on("mouseleave", "our-bldg", () => {
+            map.getCanvas().style.cursor = "";
+            try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
+          });
+
           setReady(true);
           } catch (e) {
             console.error('MapboxScene: error during map load:', e);
           }
         });
-      let lastHoverId: string | null = null;
-      let lastBuildingHover = false;
-      map.on("mousemove", "units-fill", (e) => {
-        map.getCanvas().style.cursor = "pointer";
-        const f = e.features && e.features[0];
-        const tip = tipRef.current;
-        if (!f || !tip) return;
-        tip.style.display = "block";
-        tip.style.left = e.point.x + 12 + "px";
-        tip.style.top = e.point.y + 12 + "px";
-        // prefer feature.id (required for feature-state), fallback to properties.id
-        const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
-        const { floor, status, area, rooms } = f.properties as any;
-        tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
-        // highlight hovered apartment
-        if (fid && lastHoverId !== fid) {
-          if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
-          map.setFeatureState({ source: "units", id: fid }, { hover: true });
-          lastHoverId = fid;
-        }
-        // also highlight building footprint while hovering an apartment
-        if (!lastBuildingHover) {
-          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
-          lastBuildingHover = true;
-        }
-      });
-      map.on("mouseleave", "units-fill", () => {
-        map.getCanvas().style.cursor = "";
-        if (tipRef.current) tipRef.current.style.display = "none";
-        if (lastHoverId) {
-          map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
-          lastHoverId = null;
-        }
-        if (lastBuildingHover) {
-          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
-          lastBuildingHover = false;
-        }
-      });
-      map.on("click", "units-fill", (e) => {
-        const f = e.features && e.features[0];
-        if (!f) return;
-        const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
-        const { area, rooms } = f.properties as any;
-        onPick?.({ id: fid ?? (f.properties && f.properties.id) ?? null, area: Number(area), rooms: Number(rooms) });
-      });
+      }, [filter]);
 
-      // hovering directly on the building extrusion toggles outline highlight as well
-      map.on("mousemove", "our-bldg", (e) => {
-        map.getCanvas().style.cursor = "pointer";
-        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
-      });
-      map.on("mouseleave", "our-bldg", () => {
-        map.getCanvas().style.cursor = "";
-        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
-      });
+      if (!token) {
+        return (
+          <div className="relative w-full max-w-[1100px] mx-auto rounded-xl overflow-hidden ring-1 ring-border bg-surface p-6 text-sm text-muted">
+            Добавьте NEXT_PUBLIC_MAPBOX_TOKEN в .env.local, чтобы отобразить карту с окружением.
+          </div>
+        );
+      }
 
-      setReady(true);
-    });
-
-    return () => { mapRef.current?.remove(); };
-  }, [token, center, footprint, onPick, floorCount, externalUnits]);
-
-  // Update units source once external units arrive after the map has been created
-  useEffect(() => {
-    if (!externalUnits || !mapRef.current) return;
-    const source = mapRef.current.getSource('units') as GeoJSONSource | undefined;
-    if (source) {
-      source.setData(externalUnits);
+      return (
+        <div className="relative w-full max-w-[1100px] mx-auto rounded-xl overflow-hidden ring-1 ring-border" style={{ height: "68vh" }}>
+          <div ref={containerRef} className="w-full h-full" />
+          <div ref={tipRef} className="absolute pointer-events-none bg-[#111] text-white text-xs px-2 py-1 rounded" style={{ display: "none" }} />
+        </div>
+      );
     }
-  }, [externalUnits]);
 
-  // Применение фильтра (available/rooms/floor)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const filters: any[] = ["all"]; // базовый фильтр для слоя
-    if (filter.onlyAvailable) filters.push(["==", ["get", "status"], "available"]);
-    if (filter.rooms) filters.push(["==", ["get", "rooms"], filter.rooms]);
-    if (filter.hoverFloor) filters.push(["==", ["get", "floor"], filter.hoverFloor]);
-    try {
-      map.setFilter("units-fill", filters as any);
-      map.setFilter("units-outline", filters as any);
-    } catch {}
+    // Scale polygon (lng,lat points) from centroid by factor (positive = outward)
+    function scalePolygon(pts: [number, number][], factor: number) {
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      return pts.map(p => {
+        return [cx + (p[0] - cx) * (1 + factor), cy + (p[1] - cy) * (1 + factor)] as [number, number];
+      });
+    }
   }, [filter]);
 
   if (!token) {
