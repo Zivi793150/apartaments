@@ -85,8 +85,8 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   } as GeoJSON.FeatureCollection;
 }
 
-function computeCentroid(quad: [number, number][]) {
-  const sum = quad.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
+function computeCentroid(quad: [number, number][]): [number, number] {
+  const sum = quad.reduce<[number, number]>((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
   return [sum[0] / quad.length, sum[1] / quad.length];
 }
 
