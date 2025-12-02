@@ -68,6 +68,42 @@ function sanitizeStyleExpression(expr: any): any {
   return expr.map((e: any) => sanitizeStyleExpression(e));
 }
 
+function normalizeRing(ring: number[][]): [number, number][] | null {
+  if (!Array.isArray(ring) || ring.length < 4) return null;
+  const normalized = ring.map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+  const first = normalized[0];
+  const last = normalized[normalized.length - 1];
+  if (first && last && Math.abs(first[0] - last[0]) < 1e-9 && Math.abs(first[1] - last[1]) < 1e-9) {
+    normalized.pop();
+  }
+  return normalized;
+}
+
+function extractFootprintFromFeature(feature: GeoJSON.Feature | undefined): [number, number][] | null {
+  if (!feature || !feature.geometry) return null;
+  if (feature.geometry.type === "Polygon") {
+    const ring = feature.geometry.coordinates?.[0] as number[][] | undefined;
+    return ring ? normalizeRing(ring) : null;
+  }
+  if (feature.geometry.type === "MultiPolygon") {
+    for (const poly of feature.geometry.coordinates || []) {
+      const ring = poly?.[0] as number[][] | undefined;
+      const normalized = ring ? normalizeRing(ring) : null;
+      if (normalized) return normalized;
+    }
+  }
+  return null;
+}
+
+function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null): [number, number][] | null {
+  if (!collection || !Array.isArray(collection.features)) return null;
+  for (const feature of collection.features) {
+    const ring = extractFootprintFromFeature(feature as GeoJSON.Feature);
+    if (ring) return ring;
+  }
+  return null;
+}
+
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   return {
     type: "FeatureCollection",
@@ -167,6 +203,28 @@ export default function MapboxScene({
     })();
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    if (!externalUnits) return;
+    const derived = deriveFootprintFromUnits(externalUnits);
+    if (!derived || derived.length < 4) return;
+    setFootprint(derived);
+    const map = mapRef.current;
+    if (!map) return;
+    const polygonCoords = [...derived, derived[0]];
+    const footprintFeature = {
+      type: 'Feature',
+      id: 'building',
+      properties: { floors: TEST_FLOORS.length },
+      geometry: { type: 'Polygon', coordinates: [polygonCoords] }
+    } as GeoJSON.Feature;
+    const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
+    footprintSource?.setData(footprintFeature as any);
+    const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
+    if (facadeSource) {
+      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TEST_FLOORS.length));
+    }
+  }, [externalUnits]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
