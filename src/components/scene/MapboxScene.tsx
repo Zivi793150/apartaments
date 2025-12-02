@@ -437,7 +437,10 @@ export default function MapboxScene({
       setReady(true);
     });
 
-    return () => { mapRef.current?.remove(); };
+    return () => {
+      mapRef.current?.remove();
+      styleSanitizedRef.current = false;
+    };
   }, [token, center, footprint, units, externalUnits, floorsCount, onPick]);
 
   // Применение фильтра (available/rooms/floor)
