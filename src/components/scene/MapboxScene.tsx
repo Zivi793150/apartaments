@@ -157,6 +157,7 @@ export default function MapboxScene({
   const mapRef = useRef<Map | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
+  const hasCustomFootprint = useRef(false);
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -198,6 +199,7 @@ export default function MapboxScene({
         if (quad && mounted) {
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
           setFootprint(quad);
+          hasCustomFootprint.current = true;
         }
       } catch (e) {
         try { console.warn('MapboxScene: failed to load /building-quad.json', e); } catch {}
@@ -227,7 +229,7 @@ export default function MapboxScene({
   }, []);
 
   useEffect(() => {
-    if (!externalUnits || !ready) return;
+    if (!externalUnits || !ready || hasCustomFootprint.current) return;
     const derived = deriveFootprintFromUnits(externalUnits);
     if (!derived || derived.length < 4) return;
     setFootprint(derived);
