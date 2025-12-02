@@ -11,19 +11,14 @@ export type MapboxSceneFilter = {
   hoverFloor?: number | null;
 };
 
-// Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
-
-const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
+const TOTAL_FLOORS = 6;
 const FLOOR_HEIGHT_M = 3.1;
-const UNITS_PER_FLOOR = 4;
-
 
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
 
-
 // Парсинг geojson квартир
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
-  const floors = TEST_FLOORS;
+  const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
   const units: Unit[] = [];
   for (const f of floors) {
     try {
@@ -256,27 +251,28 @@ export default function MapboxScene({
   }, []);
 
   useEffect(() => {
-    if (!externalUnits || !ready) return;
-    const hull = deriveFootprintFromUnits(externalUnits);
-    if (!hull || hull.length < 4) return;
-    if (!hasCustomFootprint.current) {
-      setFootprint(hull);
-      const map = mapRef.current;
-      if (!map || !map.isStyleLoaded()) return;
-      const polygonCoords = [...hull, hull[0]];
-      const footprintFeature = {
-        type: 'Feature',
-        id: 'building',
-        properties: { floors: TEST_FLOORS.length },
-        geometry: { type: 'Polygon', coordinates: [polygonCoords] }
-      } as GeoJSON.Feature;
-      const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
-      footprintSource?.setData(footprintFeature as any);
-      const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
-      facadeSource?.setData(makeFacadeFeatureCollection(hull as any, TEST_FLOORS.length));
+    if (!externalUnits || !ready || hasCustomFootprint.current) return;
+    const derived = deriveFootprintFromUnits(externalUnits);
+    if (!derived || derived.length < 4) return;
+    setFootprint(derived);
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const polygonCoords = [...derived, derived[0]];
+    const footprintFeature = {
+      type: 'Feature',
+      id: 'building',
+      properties: { floors: TEST_FLOORS.length },
+      geometry: { type: 'Polygon', coordinates: [polygonCoords] }
+    } as GeoJSON.Feature;
+    const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
+    if (footprintSource) {
+      footprintSource.setData(footprintFeature as any);
+    }
+    const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
+    if (facadeSource) {
+      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TEST_FLOORS.length));
     }
   }, [externalUnits, ready]);
-
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
@@ -376,7 +372,7 @@ export default function MapboxScene({
           let unitsSourceData: GeoJSON.FeatureCollection;
           if (externalUnits && externalUnits.type === 'FeatureCollection') {
             // Ensure features have an id and extrusion heights (Mapbox feature-state uses feature id)
-            const normalized = externalUnits.features.map((f: any, idx: number) => {
+            const features = externalUnits.features.map((f: any, idx: number) => {
               const copy = { ...f } as any;
               const props = { ...(copy.properties || {}) } as any;
               const floor = Number(isFinite(props.floor) ? props.floor : 1);
@@ -414,36 +410,10 @@ export default function MapboxScene({
               }
               return copy;
             });
-            const desiredFloors = TEST_FLOORS.length;
-            const maxOriginalFloor = normalized.reduce((max, feat) => {
-              const floorVal = Number((feat.properties && feat.properties.floor) || 0);
-              return Math.max(max, floorVal);
-            }, 0);
-            const features = [...normalized];
-            if (maxOriginalFloor > 0 && desiredFloors > maxOriginalFloor) {
-              normalized.forEach((feat) => {
-                const baseFloor = Number((feat.properties && feat.properties.floor) || 1);
-                let nextFloor = baseFloor + maxOriginalFloor;
-                while (nextFloor <= desiredFloors) {
-                  const clone = {
-                    ...feat,
-                    id: `${feat.id}-dup-${nextFloor}`,
-                    properties: {
-                      ...(feat.properties || {}),
-                      floor: nextFloor,
-                      min_height: (nextFloor - 1) * FLOOR_HEIGHT_M + 0.02,
-                      height: nextFloor * FLOOR_HEIGHT_M - 0.02,
-                    },
-                  };
-                  features.push(clone);
-                  nextFloor += maxOriginalFloor;
-                }
-              });
-            }
             unitsSourceData = { type: 'FeatureCollection', features };
             try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
           } else {
-            unitsSourceData = { type: 'FeatureCollection', features: [] } as any;
+            unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
           }
 
           map.addSource("units", { type: "geojson", data: unitsSourceData });
