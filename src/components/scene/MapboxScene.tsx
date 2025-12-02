@@ -11,8 +11,44 @@ export type MapboxSceneFilter = {
   hoverFloor?: number | null;
 };
 
-const TOTAL_FLOORS = 6;
+// Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
+
+const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
 const FLOOR_HEIGHT_M = 3.1;
+const UNITS_PER_FLOOR = 4;
+
+
+type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
+
+
+// Парсинг geojson квартир
+async function loadUnitsFromGeojson(): Promise<Unit[]> {
+  const floors = TEST_FLOORS;
+  const units: Unit[] = [];
+  for (const f of floors) {
+    try {
+      const fileName = `floor${f}.geojson`;
+      const res = await fetch(`/plans/geojson/${fileName}`);
+      if (!res.ok) continue;
+      const geojson = await res.json();
+      if (geojson && geojson.features) {
+        for (const feat of geojson.features) {
+          // предполагаем, что properties содержит нужные данные
+          const props = feat.properties || {};
+          units.push({
+            id: props.id || `${f}-${units.length+1}`,
+            floor: f,
+            status: props.status || "available",
+            area: props.area || 40,
+            rooms: props.rooms || 2,
+            polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0,0],[1,0],[1,1],[0,1]],
+          });
+        }
+      }
+    } catch {}
+  }
+  return units;
+}
 
 // Билинейная проекция UV -> lngLat на четырехугольник (контур здания)
 function uvToLngLat(uv: [number, number], quad: [number, number][]) {
@@ -116,6 +152,25 @@ function offsetGeometry(geometry: any, offset: [number, number] | null): any {
   return geometry;
 }
 
+function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
+  return {
+    type: "FeatureCollection",
+    features: units.map(u => {
+      const ring = u.polyUV.map(p => uvToLngLat(p, quad));
+      ring.push(ring[0]);
+      // place unit extrusion to occupy the whole floor height on the facade
+      // add small epsilon inset to avoid z-fighting with building top/base
+      const min_h = (u.floor - 1) * FLOOR_HEIGHT_M + 0.02;
+      const h = u.floor * FLOOR_HEIGHT_M - 0.02;
+      return {
+        type: "Feature",
+        properties: { id: u.id, floor: u.floor, status: u.status, area: u.area, rooms: u.rooms, min_height: min_h, height: h },
+        geometry: { type: "Polygon", coordinates: [ring] }
+      };
+    })
+  } as GeoJSON.FeatureCollection;
+}
+
 export default function MapboxScene({
   filter,
   onPick,
@@ -181,6 +236,7 @@ export default function MapboxScene({
     return () => { mounted = false; };
   }, []);
 
+  const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
   // Try to load optional units.geojson (pre-drawn apartment polygons) from public
@@ -210,7 +266,7 @@ export default function MapboxScene({
     const footprintFeature = {
       type: 'Feature',
       id: 'building',
-      properties: { floors: TOTAL_FLOORS },
+      properties: { floors: TEST_FLOORS.length },
       geometry: { type: 'Polygon', coordinates: [polygonCoords] }
     } as GeoJSON.Feature;
     const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
@@ -219,7 +275,7 @@ export default function MapboxScene({
     }
     const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
     if (facadeSource) {
-      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TOTAL_FLOORS));
+      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TEST_FLOORS.length));
     }
   }, [externalUnits, ready]);
   useEffect(() => {
@@ -281,7 +337,7 @@ export default function MapboxScene({
           
           // our building - slightly reduced height to avoid z-fighting with unit extrusions
           // give the building feature an id so it can be targeted with feature-state
-          const FLOORS = TOTAL_FLOORS;
+          const FLOORS = TEST_FLOORS.length;
           if (isValid) {
             map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
           } else {
@@ -306,7 +362,7 @@ export default function MapboxScene({
           map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
 
           // Add facade + balcony + glass approximation
-          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TOTAL_FLOORS);
+          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TEST_FLOORS.length);
           map.addSource("facade", { type: "geojson", data: facadeFC });
           // facade bands
           map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
@@ -321,12 +377,12 @@ export default function MapboxScene({
           let unitsSourceData: GeoJSON.FeatureCollection;
           if (externalUnits && externalUnits.type === 'FeatureCollection') {
             // Ensure features have an id and extrusion heights (Mapbox feature-state uses feature id)
-            const features = externalUnits.features.map((f: any, idx: number) => {
+            const normalized = externalUnits.features.map((f: any, idx: number) => {
               const copy = { ...f } as any;
               const props = { ...(copy.properties || {}) } as any;
               const floor = Number(isFinite(props.floor) ? props.floor : 1);
               const status = String(props.status || 'available').toLowerCase();
-              const statusMap: Record<string, 'available' | 'reserved' | 'sold'> = {
+              const statusMap: Record<string, Unit['status']> = {
                 available: 'available',
                 aviable: 'available',
                 free: 'available',
@@ -359,10 +415,36 @@ export default function MapboxScene({
               }
               return copy;
             });
+            const desiredFloors = TEST_FLOORS.length;
+            const maxOriginalFloor = normalized.reduce((max, feat) => {
+              const floorVal = Number((feat.properties && feat.properties.floor) || 0);
+              return Math.max(max, floorVal);
+            }, 0);
+            const features = [...normalized];
+            if (maxOriginalFloor > 0 && desiredFloors > maxOriginalFloor) {
+              normalized.forEach((feat) => {
+                const baseFloor = Number((feat.properties && feat.properties.floor) || 1);
+                let nextFloor = baseFloor + maxOriginalFloor;
+                while (nextFloor <= desiredFloors) {
+                  const clone = {
+                    ...feat,
+                    id: `${feat.id}-dup-${nextFloor}`,
+                    properties: {
+                      ...(feat.properties || {}),
+                      floor: nextFloor,
+                      min_height: (nextFloor - 1) * FLOOR_HEIGHT_M + 0.02,
+                      height: nextFloor * FLOOR_HEIGHT_M - 0.02,
+                    },
+                  };
+                  features.push(clone);
+                  nextFloor += maxOriginalFloor;
+                }
+              });
+            }
             unitsSourceData = { type: 'FeatureCollection', features };
             try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
           } else {
-            unitsSourceData = { type: 'FeatureCollection', features: [] } as GeoJSON.FeatureCollection;
+            unitsSourceData = { type: 'FeatureCollection', features: [] } as any;
           }
 
           map.addSource("units", { type: "geojson", data: unitsSourceData });
@@ -462,7 +544,7 @@ export default function MapboxScene({
     });
 
     return () => { mapRef.current?.remove(); };
-  }, [token, center, footprint, onPick, externalUnits]);
+  }, [token, center, footprint, units, onPick]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
