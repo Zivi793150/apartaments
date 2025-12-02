@@ -205,12 +205,12 @@ export default function MapboxScene({
   }, []);
 
   useEffect(() => {
-    if (!externalUnits) return;
+    if (!externalUnits || !ready) return;
     const derived = deriveFootprintFromUnits(externalUnits);
     if (!derived || derived.length < 4) return;
     setFootprint(derived);
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !map.isStyleLoaded()) return;
     const polygonCoords = [...derived, derived[0]];
     const footprintFeature = {
       type: 'Feature',
@@ -219,12 +219,14 @@ export default function MapboxScene({
       geometry: { type: 'Polygon', coordinates: [polygonCoords] }
     } as GeoJSON.Feature;
     const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
-    footprintSource?.setData(footprintFeature as any);
+    if (footprintSource) {
+      footprintSource.setData(footprintFeature as any);
+    }
     const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
     if (facadeSource) {
       facadeSource.setData(makeFacadeFeatureCollection(derived as any, TEST_FLOORS.length));
     }
-  }, [externalUnits]);
+  }, [externalUnits, ready]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
