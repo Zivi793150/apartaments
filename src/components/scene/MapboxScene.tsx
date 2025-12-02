@@ -326,7 +326,7 @@ export default function MapboxScene({
               const props = { ...(copy.properties || {}) } as any;
               const floor = Number(isFinite(props.floor) ? props.floor : 1);
               const status = String(props.status || 'available').toLowerCase();
-              const statusMap: Record<string, Unit['status']> = {
+              const statusMap: Record<string, 'available' | 'reserved' | 'sold'> = {
                 available: 'available',
                 aviable: 'available',
                 free: 'available',
