@@ -69,39 +69,61 @@ function sanitizeStyleExpression(expr: any): any {
 }
 
 function normalizeRing(ring: number[][]): [number, number][] | null {
-  if (!Array.isArray(ring) || ring.length < 4) return null;
-  const normalized = ring.map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number]);
-  const first = normalized[0];
-  const last = normalized[normalized.length - 1];
-  if (first && last && Math.abs(first[0] - last[0]) < 1e-9 && Math.abs(first[1] - last[1]) < 1e-9) {
-    normalized.pop();
-  }
-  return normalized;
+  if (!Array.isArray(ring) || ring.length < 3) return null;
+  return ring.map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number]);
 }
 
-function extractFootprintFromFeature(feature: GeoJSON.Feature | undefined): [number, number][] | null {
-  if (!feature || !feature.geometry) return null;
+function collectFeaturePoints(feature: GeoJSON.Feature): [number, number][] {
+  const pts: [number, number][] = [];
+  if (!feature.geometry) return pts;
+  const pushRing = (ring: number[][]) => {
+    const normalized = normalizeRing(ring);
+    if (normalized) pts.push(...normalized);
+  };
   if (feature.geometry.type === "Polygon") {
-    const ring = feature.geometry.coordinates?.[0] as number[][] | undefined;
-    return ring ? normalizeRing(ring) : null;
+    const rings = feature.geometry.coordinates as number[][][];
+    rings?.forEach(pushRing);
+  } else if (feature.geometry.type === "MultiPolygon") {
+    const polys = feature.geometry.coordinates as number[][][][];
+    polys?.forEach(poly => poly.forEach(pushRing));
   }
-  if (feature.geometry.type === "MultiPolygon") {
-    for (const poly of feature.geometry.coordinates || []) {
-      const ring = poly?.[0] as number[][] | undefined;
-      const normalized = ring ? normalizeRing(ring) : null;
-      if (normalized) return normalized;
+  return pts;
+}
+
+function convexHull(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points;
+  const sorted = [...points].sort((a, b) => (a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]));
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
     }
+    lower.push(p);
   }
-  return null;
+  const upper: [number, number][] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  upper.pop();
+  lower.pop();
+  return [...lower, ...upper];
 }
 
 function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null): [number, number][] | null {
   if (!collection || !Array.isArray(collection.features)) return null;
+  const pts: [number, number][] = [];
   for (const feature of collection.features) {
-    const ring = extractFootprintFromFeature(feature as GeoJSON.Feature);
-    if (ring) return ring;
+    pts.push(...collectFeaturePoints(feature as GeoJSON.Feature));
   }
-  return null;
+  if (!pts.length) return null;
+  const hull = convexHull(pts);
+  return hull.length >= 3 ? hull : null;
 }
 
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
