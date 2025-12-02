@@ -115,6 +115,12 @@ function convexHull(points: [number, number][]): [number, number][] {
   return [...lower, ...upper];
 }
 
+function centroidOfPolygon(points: [number, number][]): [number, number] {
+  if (!points.length) return [0, 0];
+  const sum = points.reduce<[number, number]>((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
+  return [sum[0] / points.length, sum[1] / points.length];
+}
+
 function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null): [number, number][] | null {
   if (!collection || !Array.isArray(collection.features)) return null;
   const pts: [number, number][] = [];
@@ -124,6 +130,26 @@ function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null):
   if (!pts.length) return null;
   const hull = convexHull(pts);
   return hull.length >= 3 ? hull : null;
+}
+
+function offsetGeometry(geometry: any, offset: [number, number] | null): any {
+  if (!geometry || !offset) return geometry;
+  const shiftPoint = (pt: number[]): [number, number] => [pt[0] + offset[0], pt[1] + offset[1]];
+  if (geometry.type === 'Polygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(shiftPoint)),
+    };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => ring.map(shiftPoint))
+      ),
+    };
+  }
+  return geometry;
 }
 
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
@@ -158,6 +184,7 @@ export default function MapboxScene({
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const hasCustomFootprint = useRef(false);
+  const [unitsOffset, setUnitsOffset] = useState<[number, number] | null>(null);
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -372,6 +399,7 @@ export default function MapboxScene({
               if (typeof copy.id === 'undefined') {
                 copy.id = props.id ? String(props.id) : `ext-${idx}`;
               }
+              copy.geometry = offsetGeometry(copy.geometry, unitsOffset);
               if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
                 copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
                   poly.map((ring: number[][]) => {
