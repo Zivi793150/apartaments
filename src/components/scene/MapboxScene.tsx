@@ -13,7 +13,7 @@ export type MapboxSceneFilter = {
 
 // Простая генерация плана квартир (пример). Позже можно заменить данными из public/plans
 
-const DEFAULT_FLOORS = [1, 2, 3, 4, 5, 6];
+const TEST_FLOORS = [1, 2, 3, 4, 5, 6];
 const FLOOR_HEIGHT_M = 3.1;
 const UNITS_PER_FLOOR = 4;
 
@@ -22,11 +22,13 @@ type Unit = { id: string; floor: number; status: "available" | "reserved" | "sol
 
 
 // Парсинг geojson квартир
-async function loadUnitsFromGeojson(floors: number[] = DEFAULT_FLOORS): Promise<Unit[]> {
+async function loadUnitsFromGeojson(): Promise<Unit[]> {
+  const floors = TEST_FLOORS;
   const units: Unit[] = [];
   for (const f of floors) {
     try {
-      const res = await fetch(`/plans/geojson/floor${f}.geojson`);
+      const fileName = `floor${f}.geojson`;
+      const res = await fetch(`/plans/geojson/${fileName}`);
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && geojson.features) {
@@ -63,13 +65,7 @@ function sanitizeStyleExpression(expr: any): any {
   if (expr.length === 2 && expr[0] === "get" && expr[1] === "sizerank") {
     return ["coalesce", ["get", "sizerank"], 0];
   }
-  let changed = false;
-  const result = expr.map((item: any) => {
-    const next = sanitizeStyleExpression(item);
-    if (next !== item) changed = true;
-    return next;
-  });
-  return changed ? result : expr;
+  return expr.map((e: any) => sanitizeStyleExpression(e));
 }
 
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
@@ -103,8 +99,6 @@ export default function MapboxScene({
   const mapRef = useRef<Map | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
-  const [floorsCount, setFloorsCount] = useState<number>(DEFAULT_FLOORS.length);
-  const styleSanitizedRef = useRef(false);
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -143,12 +137,9 @@ export default function MapboxScene({
           if (f) quad = f.geometry.coordinates[0].slice(0,4) as any;
         }
         if (quad && mounted) setFootprint(quad);
-        if (mounted) {
+        if (quad && mounted) {
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
-          const floorsFromProps = Number(json?.properties?.floors);
-          if (Number.isFinite(floorsFromProps) && floorsFromProps > 0) {
-            setFloorsCount(prev => Math.max(prev, Math.floor(floorsFromProps)));
-          }
+          setFootprint(quad);
         }
       } catch (e) {
         try { console.warn('MapboxScene: failed to load /building-quad.json', e); } catch {}
@@ -160,18 +151,6 @@ export default function MapboxScene({
 
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
-
-  // Fallback load of procedural floors if no external polygons
-  useEffect(() => {
-    let mounted = true;
-    loadUnitsFromGeojson().then((data) => {
-      if (!mounted) return;
-      setUnits(data);
-      const fallbackMax = data.reduce((max, unit) => Math.max(max, unit.floor), 0);
-      if (fallbackMax > 0) setFloorsCount(prev => Math.max(prev, fallbackMax));
-    }).catch(() => {});
-    return () => { mounted = false; };
-  }, []);
 
   // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
@@ -188,66 +167,45 @@ export default function MapboxScene({
     })();
     return () => { mounted = false; };
   }, []);
-
   useEffect(() => {
-    if (!externalUnits) return;
-    const maxFloor = externalUnits.features.reduce((max: number, feature: any) => {
-      const f = Number(feature?.properties?.floor);
-      return Number.isFinite(f) ? Math.max(max, f) : max;
-    }, 0);
-    if (maxFloor > 0) setFloorsCount(prev => Math.max(prev, maxFloor));
-  }, [externalUnits]);
-  useEffect(() => {
-    if (!token || !containerRef.current) return;
+    if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
-    if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
-    }
-    styleSanitizedRef.current = false;
+    // --- Динамически загружаем и модифицируем Mapbox style JSON ---
+    const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
+    fetch(styleUrl)
+      .then(res => res.json())
+      .then((styleJson) => {
+        // Рекурсивно заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0]
+        (styleJson.layers || []).forEach((layer: any) => {
+          if (layer.paint) {
+            Object.keys(layer.paint).forEach((prop) => {
+              layer.paint[prop] = sanitizeStyleExpression(layer.paint[prop]);
+            });
+          }
+          if (layer.layout) {
+            Object.keys(layer.layout).forEach((prop) => {
+              layer.layout[prop] = sanitizeStyleExpression(layer.layout[prop]);
+            });
+          }
+        });
 
-    const mapInstance = new mapboxgl.Map({
-      container: containerRef.current as HTMLElement,
-      style: "mapbox://styles/mapbox/standard",
-      center: center as LngLatLike,
-      zoom: 17.6,
-      pitch: 60,
-      bearing: -20,
-      antialias: true,
-      cooperativeGestures: true,
-    });
-    mapRef.current = mapInstance;
-    try { (window as any).__debugMap = mapInstance; } catch {}
+        // Инициализируем карту с модифицированным стилем
+        if (!containerRef.current) return;
+        const map = new mapboxgl.Map({
+          container: containerRef.current as HTMLElement,
+          style: styleJson,
+          center: center as LngLatLike,
+          zoom: 17.6,
+          pitch: 60,
+          bearing: -20,
+          antialias: true,
+          cooperativeGestures: true,
+        });
+        mapRef.current = map;
+        try { (window as any).__debugMap = map; } catch {}
 
-    const handleStyleData = () => {
-      if (styleSanitizedRef.current) return;
-      const style = mapInstance.getStyle();
-      if (!style?.layers) return;
-      style.layers.forEach((layer: any) => {
-        if (layer.paint) {
-          Object.keys(layer.paint).forEach((prop) => {
-            const sanitized = sanitizeStyleExpression(layer.paint[prop]);
-            if (sanitized !== layer.paint[prop]) {
-              mapInstance.setPaintProperty(layer.id, prop as any, sanitized as any);
-            }
-          });
-        }
-        if (layer.layout) {
-          Object.keys(layer.layout).forEach((prop) => {
-            const sanitized = sanitizeStyleExpression(layer.layout[prop]);
-            if (sanitized !== layer.layout[prop]) {
-              mapInstance.setLayoutProperty(layer.id, prop as any, sanitized as any);
-            }
-          });
-        }
-      });
-      styleSanitizedRef.current = true;
-    };
-
-    mapInstance.on("styledata", handleStyleData);
-
-    mapInstance.on("load", () => {
+        map.on("load", () => {
           try {
           // Наш дом: добавляем footprint и слой здания
           const polygonCoords = Array.isArray(footprint) && footprint.length >= 4 ? [...footprint, footprint[0]] : null;
@@ -261,9 +219,9 @@ export default function MapboxScene({
           
           // our building - slightly reduced height to avoid z-fighting with unit extrusions
           // give the building feature an id so it can be targeted with feature-state
-          const FLOORS = Math.max(1, floorsCount);
+          const FLOORS = TEST_FLOORS.length;
           if (isValid) {
-            mapInstance.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
+            map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
           } else {
             // fallback: build rectangle from center
             const [lng, lat] = center;
@@ -275,27 +233,27 @@ export default function MapboxScene({
               [lng + dx * 0.95, lat - dy],
               [lng - dx * 0.95, lat - dy],
             ];
-            mapInstance.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [fallback.concat([fallback[0]])] } } });
+            map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [fallback.concat([fallback[0]])] } } });
             console.info('MapboxScene: used fallback rectangle footprint', fallback);
           }
           // our building - slightly reduced height to avoid z-fighting with unit extrusions
           // (source for our-footprint already added above depending on validity)
           // building fill - color reacts to feature-state hover for highlight
-          mapInstance.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ffd54d", "#EAECEF"], "fill-extrusion-height": ["-", ["*", ["get", "floors"], FLOOR_HEIGHT_M], 0.05], "fill-extrusion-opacity": 0.98 } });
+          map.addLayer({ id: "our-bldg", type: "fill-extrusion", source: "our-footprint", paint: { "fill-extrusion-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ffd54d", "#EAECEF"], "fill-extrusion-height": ["-", ["*", ["get", "floors"], FLOOR_HEIGHT_M], 0.05], "fill-extrusion-opacity": 0.98 } });
           // 2D outline of the building footprint (visible on map) which also highlights on hover
-          mapInstance.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
+          map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
 
           // Add facade + balcony + glass approximation
-          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, Math.max(1, floorsCount));
-          mapInstance.addSource("facade", { type: "geojson", data: facadeFC });
+          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TEST_FLOORS.length);
+          map.addSource("facade", { type: "geojson", data: facadeFC });
           // facade bands
-          mapInstance.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
+          map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
 
           // glass panels (transparent)
-          mapInstance.addLayer({ id: "facade-glass", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "glass"], paint: { "fill-extrusion-color": "#a8d0ff", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.18 } });
+          map.addLayer({ id: "facade-glass", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "glass"], paint: { "fill-extrusion-color": "#a8d0ff", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.18 } });
 
           // balconies
-          mapInstance.addLayer({ id: "facade-balconies", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "balcony"], paint: { "fill-extrusion-color": "#e9e6e1", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 1 } });
+          map.addLayer({ id: "facade-balconies", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "balcony"], paint: { "fill-extrusion-color": "#e9e6e1", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 1 } });
 
           // Квартиры: добавляем source и слои (оставляем поверх фасада)
           let unitsSourceData: GeoJSON.FeatureCollection;
@@ -344,8 +302,8 @@ export default function MapboxScene({
             unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
           }
 
-          mapInstance.addSource("units", { type: "geojson", data: unitsSourceData });
-          mapInstance.addLayer({
+          map.addSource("units", { type: "geojson", data: unitsSourceData });
+          map.addLayer({
             id: "units-fill",
             type: "fill-extrusion",
             source: "units",
@@ -365,27 +323,19 @@ export default function MapboxScene({
               "fill-extrusion-opacity": 0.75,
             }
           });
-          mapInstance.addLayer({
-            id: "units-outline",
-            type: "line",
-            source: "units",
-            paint: {
-              "line-color": [
-                "case",
-                  ["boolean", ["feature-state", "hover"], false], "#00ff00",
-                  "#2b2b2b"
-              ],
-              "line-width": [
-                "case",
-                  ["boolean", ["feature-state", "hover"], false], 4,
-                  1
-              ]
-            }
-          });
+          map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": [
+            "case",
+              ["boolean", ["feature-state", "hover"], false], "#00ff00",
+              "#2b2b2b"
+          ], "line-width": [
+            "case",
+              ["boolean", ["feature-state", "hover"], false], 4,
+              1
+          ] } });
 
           // Center and zoom closer to the building so facade is visible
           try {
-            mapInstance.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+            map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
           setReady(true);
@@ -395,8 +345,8 @@ export default function MapboxScene({
         });
       let lastHoverId: string | null = null;
       let lastBuildingHover = false;
-      mapInstance.on("mousemove", "units-fill", (e) => {
-        mapInstance.getCanvas().style.cursor = "pointer";
+      map.on("mousemove", "units-fill", (e) => {
+        map.getCanvas().style.cursor = "pointer";
         const f = e.features && e.features[0];
         const tip = tipRef.current;
         if (!f || !tip) return;
@@ -409,29 +359,29 @@ export default function MapboxScene({
         tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
         // highlight hovered apartment
         if (fid && lastHoverId !== fid) {
-          if (lastHoverId) mapInstance.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
-          mapInstance.setFeatureState({ source: "units", id: fid }, { hover: true });
+          if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          map.setFeatureState({ source: "units", id: fid }, { hover: true });
           lastHoverId = fid;
         }
         // also highlight building footprint while hovering an apartment
         if (!lastBuildingHover) {
-          try { mapInstance.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
           lastBuildingHover = true;
         }
       });
-      mapInstance.on("mouseleave", "units-fill", () => {
-        mapInstance.getCanvas().style.cursor = "";
+      map.on("mouseleave", "units-fill", () => {
+        map.getCanvas().style.cursor = "";
         if (tipRef.current) tipRef.current.style.display = "none";
         if (lastHoverId) {
-          mapInstance.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
           lastHoverId = null;
         }
         if (lastBuildingHover) {
-          try { mapInstance.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
+          try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
           lastBuildingHover = false;
         }
       });
-      mapInstance.on("click", "units-fill", (e) => {
+      map.on("click", "units-fill", (e) => {
         const f = e.features && e.features[0];
         if (!f) return;
         const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
@@ -440,25 +390,20 @@ export default function MapboxScene({
       });
 
       // hovering directly on the building extrusion toggles outline highlight as well
-      mapInstance.on("mousemove", "our-bldg", () => {
-        mapInstance.getCanvas().style.cursor = "pointer";
-        try { mapInstance.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
+      map.on("mousemove", "our-bldg", (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
       });
-      mapInstance.on("mouseleave", "our-bldg", () => {
-        mapInstance.getCanvas().style.cursor = "";
-        try { mapInstance.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
+      map.on("mouseleave", "our-bldg", () => {
+        map.getCanvas().style.cursor = "";
+        try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: false }); } catch {}
       });
 
       setReady(true);
     });
 
-    return () => {
-      mapInstance.off("styledata", handleStyleData);
-      mapInstance.remove();
-      mapRef.current = null;
-      styleSanitizedRef.current = false;
-    };
-  }, [token, center, footprint, units, externalUnits, floorsCount, onPick]);
+    return () => { mapRef.current?.remove(); };
+  }, [token, center, footprint, units, onPick]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
