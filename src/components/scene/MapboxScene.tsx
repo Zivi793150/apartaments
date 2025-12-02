@@ -365,15 +365,23 @@ export default function MapboxScene({
               "fill-extrusion-opacity": 0.75,
             }
           });
-          mapInstance.addLayer({ id: "units-outline", type: "line", source: "units", paint: {
-            "case",
-              ["boolean", ["feature-state", "hover"], false], "#00ff00",
-              "#2b2b2b"
-          ], "line-width": [
-            "case",
-              ["boolean", ["feature-state", "hover"], false], 4,
-              1
-          ] } });
+          mapInstance.addLayer({
+            id: "units-outline",
+            type: "line",
+            source: "units",
+            paint: {
+              "line-color": [
+                "case",
+                  ["boolean", ["feature-state", "hover"], false], "#00ff00",
+                  "#2b2b2b"
+              ],
+              "line-width": [
+                "case",
+                  ["boolean", ["feature-state", "hover"], false], 4,
+                  1
+              ]
+            }
+          });
 
           // Center and zoom closer to the building so facade is visible
           try {
