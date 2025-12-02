@@ -261,7 +261,7 @@ export default function MapboxScene({
     const footprintFeature = {
       type: 'Feature',
       id: 'building',
-      properties: { floors: TEST_FLOORS.length },
+      properties: { floors: TOTAL_FLOORS },
       geometry: { type: 'Polygon', coordinates: [polygonCoords] }
     } as GeoJSON.Feature;
     const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
@@ -270,7 +270,7 @@ export default function MapboxScene({
     }
     const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
     if (facadeSource) {
-      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TEST_FLOORS.length));
+      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TOTAL_FLOORS));
     }
   }, [externalUnits, ready]);
   useEffect(() => {
@@ -332,7 +332,7 @@ export default function MapboxScene({
           
           // our building - slightly reduced height to avoid z-fighting with unit extrusions
           // give the building feature an id so it can be targeted with feature-state
-          const FLOORS = TEST_FLOORS.length;
+          const FLOORS = TOTAL_FLOORS;
           if (isValid) {
             map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
           } else {
@@ -357,7 +357,7 @@ export default function MapboxScene({
           map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
 
           // Add facade + balcony + glass approximation
-          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TEST_FLOORS.length);
+          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TOTAL_FLOORS);
           map.addSource("facade", { type: "geojson", data: facadeFC });
           // facade bands
           map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
