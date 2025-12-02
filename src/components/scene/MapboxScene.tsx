@@ -234,6 +234,15 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
+  // fallback: load per-floor geojson files if present
+  useEffect(() => {
+    let mounted = true;
+    loadUnitsFromGeojson().then((data) => {
+      if (mounted && data.length) setUnits(data);
+    }).catch(() => {/* ignore */});
+    return () => { mounted = false; };
+  }, []);
+
   // Try to load optional units.geojson (pre-drawn apartment polygons) from public
   useEffect(() => {
     let mounted = true;
