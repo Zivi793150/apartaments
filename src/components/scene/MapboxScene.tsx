@@ -256,28 +256,27 @@ export default function MapboxScene({
   }, []);
 
   useEffect(() => {
-    if (!externalUnits || !ready || hasCustomFootprint.current) return;
-    const derived = deriveFootprintFromUnits(externalUnits);
-    if (!derived || derived.length < 4) return;
-    setFootprint(derived);
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const polygonCoords = [...derived, derived[0]];
-    const footprintFeature = {
-      type: 'Feature',
-      id: 'building',
-      properties: { floors: TEST_FLOORS.length },
-      geometry: { type: 'Polygon', coordinates: [polygonCoords] }
-    } as GeoJSON.Feature;
-    const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
-    if (footprintSource) {
-      footprintSource.setData(footprintFeature as any);
-    }
-    const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
-    if (facadeSource) {
-      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TEST_FLOORS.length));
+    if (!externalUnits || !ready) return;
+    const hull = deriveFootprintFromUnits(externalUnits);
+    if (!hull || hull.length < 4) return;
+    if (!hasCustomFootprint.current) {
+      setFootprint(hull);
+      const map = mapRef.current;
+      if (!map || !map.isStyleLoaded()) return;
+      const polygonCoords = [...hull, hull[0]];
+      const footprintFeature = {
+        type: 'Feature',
+        id: 'building',
+        properties: { floors: TEST_FLOORS.length },
+        geometry: { type: 'Polygon', coordinates: [polygonCoords] }
+      } as GeoJSON.Feature;
+      const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
+      footprintSource?.setData(footprintFeature as any);
+      const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
+      facadeSource?.setData(makeFacadeFeatureCollection(hull as any, TEST_FLOORS.length));
     }
   }, [externalUnits, ready]);
+
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
