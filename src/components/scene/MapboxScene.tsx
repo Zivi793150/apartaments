@@ -253,12 +253,13 @@ export default function MapboxScene({
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
-    // --- Динамически загружаем и модифицируем Mapbox style JSON ---
     const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
-    fetch(styleUrl)
-      .then(res => res.json())
-      .then((styleJson) => {
-        // Рекурсивно заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0]
+
+    const prepareStyle = async () => {
+      try {
+        const res = await fetch(styleUrl);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const styleJson = await res.json();
         (styleJson.layers || []).forEach((layer: any) => {
           if (layer.paint) {
             Object.keys(layer.paint).forEach((prop) => {
@@ -271,19 +272,25 @@ export default function MapboxScene({
             });
           }
         });
+        return styleJson;
+      } catch (err) {
+        try { console.warn('MapboxScene: failed to load sanitized style, fallback to default', err); } catch {}
+        return "mapbox://styles/mapbox/standard";
+      }
+    };
 
-        // Инициализируем карту с модифицированным стилем
-        if (!containerRef.current) return;
-        const map = new mapboxgl.Map({
-          container: containerRef.current as HTMLElement,
-          style: styleJson,
-          center: center as LngLatLike,
-          zoom: 17.6,
-          pitch: 60,
-          bearing: -20,
-          antialias: true,
-          cooperativeGestures: true,
-        });
+    prepareStyle().then((styleConfig) => {
+      if (!containerRef.current) return;
+      const map = new mapboxgl.Map({
+        container: containerRef.current as HTMLElement,
+        style: styleConfig as any,
+        center: center as LngLatLike,
+        zoom: 17.6,
+        pitch: 60,
+        bearing: -20,
+        antialias: true,
+        cooperativeGestures: true,
+      });
         mapRef.current = map;
         try { (window as any).__debugMap = map; } catch {}
 
@@ -435,17 +442,14 @@ export default function MapboxScene({
         tip.style.display = "block";
         tip.style.left = e.point.x + 12 + "px";
         tip.style.top = e.point.y + 12 + "px";
-        // prefer feature.id (required for feature-state), fallback to properties.id
         const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
         const { floor, status, area, rooms } = f.properties as any;
         tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
-        // highlight hovered apartment
         if (fid && lastHoverId !== fid) {
           if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
           map.setFeatureState({ source: "units", id: fid }, { hover: true });
           lastHoverId = fid;
         }
-        // also highlight building footprint while hovering an apartment
         if (!lastBuildingHover) {
           try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
           lastBuildingHover = true;
@@ -471,8 +475,7 @@ export default function MapboxScene({
         onPick?.({ id: fid ?? (f.properties && f.properties.id) ?? null, area: Number(area), rooms: Number(rooms) });
       });
 
-      // hovering directly on the building extrusion toggles outline highlight as well
-      map.on("mousemove", "our-bldg", (e) => {
+      map.on("mousemove", "our-bldg", () => {
         map.getCanvas().style.cursor = "pointer";
         try { map.setFeatureState({ source: "our-footprint", id: "building" }, { hover: true }); } catch {}
       });
