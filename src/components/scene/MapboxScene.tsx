@@ -63,7 +63,13 @@ function sanitizeStyleExpression(expr: any): any {
   if (expr.length === 2 && expr[0] === "get" && expr[1] === "sizerank") {
     return ["coalesce", ["get", "sizerank"], 0];
   }
-  return expr.map((e: any) => sanitizeStyleExpression(e));
+  let changed = false;
+  const result = expr.map((item: any) => {
+    const next = sanitizeStyleExpression(item);
+    if (next !== item) changed = true;
+    return next;
+  });
+  return changed ? result : expr;
 }
 
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
@@ -98,6 +104,7 @@ export default function MapboxScene({
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const [floorsCount, setFloorsCount] = useState<number>(DEFAULT_FLOORS.length);
+  const styleSanitizedRef = useRef(false);
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -194,41 +201,46 @@ export default function MapboxScene({
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
-    // --- Динамически загружаем и модифицируем Mapbox style JSON ---
-    const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
-    fetch(styleUrl)
-      .then(res => res.json())
-      .then((styleJson) => {
-        // Рекурсивно заменяем все ['get', 'sizerank'] на ['coalesce', ['get', 'sizerank'], 0]
-        (styleJson.layers || []).forEach((layer: any) => {
-          if (layer.paint) {
-            Object.keys(layer.paint).forEach((prop) => {
-              layer.paint[prop] = sanitizeStyleExpression(layer.paint[prop]);
-            });
-          }
-          if (layer.layout) {
-            Object.keys(layer.layout).forEach((prop) => {
-              layer.layout[prop] = sanitizeStyleExpression(layer.layout[prop]);
-            });
-          }
-        });
+    if (!containerRef.current) return;
+    const map = new mapboxgl.Map({
+      container: containerRef.current as HTMLElement,
+      style: "mapbox://styles/mapbox/standard",
+      center: center as LngLatLike,
+      zoom: 17.6,
+      pitch: 60,
+      bearing: -20,
+      antialias: true,
+      cooperativeGestures: true,
+    });
+    mapRef.current = map;
+    try { (window as any).__debugMap = map; } catch {}
 
-        // Инициализируем карту с модифицированным стилем
-        if (!containerRef.current) return;
-        const map = new mapboxgl.Map({
-          container: containerRef.current as HTMLElement,
-          style: styleJson,
-          center: center as LngLatLike,
-          zoom: 17.6,
-          pitch: 60,
-          bearing: -20,
-          antialias: true,
-          cooperativeGestures: true,
-        });
-        mapRef.current = map;
-        try { (window as any).__debugMap = map; } catch {}
+    map.on("styledata", () => {
+      if (styleSanitizedRef.current) return;
+      const style = map.getStyle();
+      if (!style?.layers) return;
+      style.layers.forEach((layer: any) => {
+        if (layer.paint) {
+          Object.keys(layer.paint).forEach((prop) => {
+            const sanitized = sanitizeStyleExpression(layer.paint[prop]);
+            if (sanitized !== layer.paint[prop]) {
+              map.setPaintProperty(layer.id, prop, sanitized);
+            }
+          });
+        }
+        if (layer.layout) {
+          Object.keys(layer.layout).forEach((prop) => {
+            const sanitized = sanitizeStyleExpression(layer.layout[prop]);
+            if (sanitized !== layer.layout[prop]) {
+              map.setLayoutProperty(layer.id, prop, sanitized);
+            }
+          });
+        }
+      });
+      styleSanitizedRef.current = true;
+    });
 
-        map.on("load", () => {
+    map.on("load", () => {
           try {
           // Наш дом: добавляем footprint и слой здания
           const polygonCoords = Array.isArray(footprint) && footprint.length >= 4 ? [...footprint, footprint[0]] : null;
