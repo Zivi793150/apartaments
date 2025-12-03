@@ -29,7 +29,7 @@ type ExternalUnitFeature = GeoJSON.Feature & {
   }) | null;
 };
 
-// Парсинг geojson квартир
+// Парсинг geojson квартир (поэтажные планы из /plans/geojson/floorX.geojson)
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
   const units: Unit[] = [];
@@ -41,7 +41,6 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
       const geojson = await res.json();
       if (geojson && geojson.features) {
         for (const feat of geojson.features) {
-          // предполагаем, что properties содержит нужные данные
           const props = feat.properties || {};
           units.push({
             id: props.id || `${f}-${units.length + 1}`,
@@ -88,6 +87,50 @@ function ensureFloorsForExternalUnits(features: ExternalUnitFeature[], totalFloo
     });
   }
   return [...features, ...clones];
+}
+
+function makeExternalUnitsFeatureCollection(collection: GeoJSON.FeatureCollection, unitsOffset: [number, number] | null) {
+  const normalizedFeatures = ensureFloorsForExternalUnits(collection.features as ExternalUnitFeature[], TOTAL_FLOORS);
+  const features = normalizedFeatures.map((f: any, idx: number) => {
+    const copy = { ...f } as any;
+    const props = { ...(copy.properties || {}) } as any;
+    const floor = Number(isFinite(props.floor) ? props.floor : 1);
+    const status = String(props.status || 'available').toLowerCase();
+    const statusMap: Record<string, Unit['status']> = {
+      available: 'available',
+      aviable: 'available',
+      free: 'available',
+      reserved: 'reserved',
+      booked: 'reserved',
+      sold: 'sold',
+      xz: 'reserved',
+    };
+    props.status = statusMap[status] || 'available';
+    props.min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+    props.height = floor * FLOOR_HEIGHT_M - 0.02;
+    props.floor = floor;
+    copy.properties = props;
+    if (typeof copy.id === 'undefined') {
+      copy.id = props.id ? String(props.id) : `ext-${idx}`;
+    }
+    copy.geometry = offsetGeometry(copy.geometry, unitsOffset);
+    if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
+      copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => {
+          if (!ring.length) return ring;
+          const first = ring[0];
+          const last = ring[ring.length - 1];
+          if (first[0] !== last[0] || first[1] !== last[1]) {
+            return [...ring, first];
+          }
+          return ring;
+        })
+      );
+    }
+    return copy;
+  });
+  try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
+  return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
 }
 
 // Билинейная проекция UV -> lngLat на четырехугольник (контур здания)
@@ -190,6 +233,21 @@ function offsetGeometry(geometry: any, offset: [number, number] | null): any {
     };
   }
   return geometry;
+}
+
+function footprintToQuad(footprint: [number, number][], center: [number, number]): [number, number][] {
+  if (Array.isArray(footprint) && footprint.length >= 4) {
+    return footprint.slice(0, 4) as [number, number][];
+  }
+  const [lng, lat] = center;
+  const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
+  const dy = 0.00006;
+  return [
+    [lng - dx, lat + dy],
+    [lng + dx, lat + dy],
+    [lng + dx * 0.95, lat - dy],
+    [lng - dx * 0.95, lat - dy],
+  ];
 }
 
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
