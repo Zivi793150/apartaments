@@ -14,6 +14,11 @@ export type MapboxSceneFilter = {
 const TOTAL_FLOORS = 6;
 const FLOOR_HEIGHT_M = 3.1;
 
+type UnitsTransform = {
+  matrix: [[number, number], [number, number]];
+  translate: [number, number];
+};
+
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
 
 // Парсинг geojson квартир
@@ -127,20 +132,98 @@ function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null):
   return hull.length >= 3 ? hull : null;
 }
 
-function offsetGeometry(geometry: any, offset: [number, number] | null): any {
-  if (!geometry || !offset) return geometry;
-  const shiftPoint = (pt: number[]): [number, number] => [pt[0] + offset[0], pt[1] + offset[1]];
+function orderPolygon(points: [number, number][]): [number, number][] {
+  if (!points.length) return [];
+  const [cx, cy] = centroidOfPolygon(points);
+  return [...points].sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
+}
+
+function pickTriangle(points: [number, number][]): [number, number][] | null {
+  if (points.length < 3) return null;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const c = points[(i + 2) % points.length];
+    const area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if (Math.abs(area) > 1e-10) {
+      return [a, b, c];
+    }
+  }
+  return null;
+}
+
+function invert3x3(m: number[][]): number[][] | null {
+  const det =
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+  if (Math.abs(det) < 1e-12) return null;
+  const invDet = 1 / det;
+  const adj = [
+    [
+      m[1][1] * m[2][2] - m[1][2] * m[2][1],
+      -(m[0][1] * m[2][2] - m[0][2] * m[2][1]),
+      m[0][1] * m[1][2] - m[0][2] * m[1][1],
+    ],
+    [
+      -(m[1][0] * m[2][2] - m[1][2] * m[2][0]),
+      m[0][0] * m[2][2] - m[0][2] * m[2][0],
+      -(m[0][0] * m[1][2] - m[0][2] * m[1][0]),
+    ],
+    [
+      m[1][0] * m[2][1] - m[1][1] * m[2][0],
+      -(m[0][0] * m[2][1] - m[0][1] * m[2][0]),
+      m[0][0] * m[1][1] - m[0][1] * m[1][0],
+    ],
+  ];
+  return adj.map((row) => row.map((val) => val * invDet));
+}
+
+function multiplyMatrixVector(m: number[][], v: number[]): number[] {
+  return m.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
+}
+
+function computeAffineTransform(
+  source: [number, number][],
+  target: [number, number][]
+): UnitsTransform | null {
+  const srcTri = pickTriangle(orderPolygon(source));
+  const dstTri = pickTriangle(orderPolygon(target));
+  if (!srcTri || !dstTri) return null;
+  const system = srcTri.map((p) => [p[0], p[1], 1]);
+  const inv = invert3x3(system);
+  if (!inv) return null;
+  const coeffX = multiplyMatrixVector(inv, dstTri.map((p) => p[0]));
+  const coeffY = multiplyMatrixVector(inv, dstTri.map((p) => p[1]));
+  return {
+    matrix: [
+      [coeffX[0], coeffX[1]],
+      [coeffY[0], coeffY[1]],
+    ],
+    translate: [coeffX[2], coeffY[2]],
+  };
+}
+
+function transformPoint(pt: number[], transform: UnitsTransform): [number, number] {
+  const [[a, b], [c, d]] = transform.matrix;
+  const [tx, ty] = transform.translate;
+  return [a * pt[0] + b * pt[1] + tx, c * pt[0] + d * pt[1] + ty];
+}
+
+function transformGeometry(geometry: any, transform: UnitsTransform | null): any {
+  if (!geometry || !transform) return geometry;
+  const apply = (pt: number[]) => transformPoint(pt, transform);
   if (geometry.type === 'Polygon') {
     return {
       ...geometry,
-      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(shiftPoint)),
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(apply)),
     };
   }
   if (geometry.type === 'MultiPolygon') {
     return {
       ...geometry,
       coordinates: geometry.coordinates.map((poly: number[][][]) =>
-        poly.map((ring: number[][]) => ring.map(shiftPoint))
+        poly.map((ring: number[][]) => ring.map(apply))
       ),
     };
   }
@@ -179,7 +262,7 @@ export default function MapboxScene({
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const hasCustomFootprint = useRef(false);
-  const [unitsOffset, setUnitsOffset] = useState<[number, number] | null>(null);
+  const [unitsTransform, setUnitsTransform] = useState<UnitsTransform | null>(null);
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -228,7 +311,6 @@ export default function MapboxScene({
           const f = json.features.find((ff: any) => ff.geometry && ff.geometry.type === 'Polygon');
           if (f) quad = normalizeRing(f.geometry.coordinates[0]) ?? null;
         }
-        if (quad && mounted) setFootprint(quad);
         if (quad && mounted) {
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
           setFootprint(quad);
@@ -269,6 +351,26 @@ export default function MapboxScene({
     })();
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    if (!externalUnits || !hasCustomFootprint.current) {
+      setUnitsTransform(null);
+      return;
+    }
+    const hull = deriveFootprintFromUnits(externalUnits);
+    if (!hull || !hull.length || !footprint.length) {
+      setUnitsTransform(null);
+      return;
+    }
+    const affine = computeAffineTransform(hull, footprint);
+    if (affine) {
+      setUnitsTransform(affine);
+      return;
+    }
+    const targetCentroid = centroidOfPolygon(footprint);
+    const hullCentroid = centroidOfPolygon(hull);
+    setUnitsTransform({ matrix: [[1, 0], [0, 1]], translate: [targetCentroid[0] - hullCentroid[0], targetCentroid[1] - hullCentroid[1]] });
+  }, [externalUnits, footprint]);
 
   useEffect(() => {
     if (!externalUnits || !ready || hasCustomFootprint.current) return;
@@ -414,7 +516,7 @@ export default function MapboxScene({
               if (typeof copy.id === 'undefined') {
                 copy.id = props.id ? String(props.id) : `ext-${idx}`;
               }
-              copy.geometry = offsetGeometry(copy.geometry, unitsOffset);
+              copy.geometry = transformGeometry(copy.geometry, unitsTransform);
               if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
                 copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
                   poly.map((ring: number[][]) => {
