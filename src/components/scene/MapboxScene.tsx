@@ -209,13 +209,24 @@ export default function MapboxScene({
         const json = await res.json();
         let quad: [number, number][] | null = null;
         // support simple array [[lng,lat],..] or GeoJSON Feature / FeatureCollection with Polygon
-        if (Array.isArray(json) && json.length >= 4 && Array.isArray(json[0])) {
-          quad = json.slice(0, 4) as any;
+        const normalizeRing = (ring: any) => {
+          if (!Array.isArray(ring)) return null;
+          const coords = ring.filter((p: any) => Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number');
+          if (!coords.length) return null;
+          const first = coords[0];
+          const last = coords[coords.length - 1];
+          if (first && last && first[0] === last[0] && first[1] === last[1]) {
+            coords.pop();
+          }
+          return coords.length >= 3 ? coords as [number, number][] : null;
+        };
+        if (Array.isArray(json) && json.length >= 3 && Array.isArray(json[0])) {
+          quad = normalizeRing(json as any) ?? null;
         } else if (json && json.type === 'Feature' && json.geometry && json.geometry.type === 'Polygon') {
-          quad = json.geometry.coordinates[0].slice(0, 4) as any;
+          quad = normalizeRing(json.geometry.coordinates[0]) ?? null;
         } else if (json && json.type === 'FeatureCollection' && Array.isArray(json.features) && json.features.length) {
           const f = json.features.find((ff: any) => ff.geometry && ff.geometry.type === 'Polygon');
-          if (f) quad = f.geometry.coordinates[0].slice(0,4) as any;
+          if (f) quad = normalizeRing(f.geometry.coordinates[0]) ?? null;
         }
         if (quad && mounted) setFootprint(quad);
         if (quad && mounted) {
