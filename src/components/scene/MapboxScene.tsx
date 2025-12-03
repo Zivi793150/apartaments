@@ -264,17 +264,14 @@ export default function MapboxScene({
   const hasCustomFootprint = useRef(false);
   const [unitsTransform, setUnitsTransform] = useState<UnitsTransform | null>(null);
 
-  const defaultCenter = useMemo<[number, number]>(() => {
+  const buildingCenter = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
     const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
     return [lng, lat];
   }, []);
 
-  const [viewCenter, setViewCenter] = useState<[number, number]>(defaultCenter);
-  const [footprintReady, setFootprintReady] = useState(false);
-
   const [footprint, setFootprint] = useState<[number, number][]>(() => {
-    const [lng, lat] = defaultCenter;
+    const [lng, lat] = buildingCenter;
     const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
     const dy = 0.00006;
     return [
@@ -318,16 +315,10 @@ export default function MapboxScene({
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
           setFootprint(quad);
           hasCustomFootprint.current = true;
-          const centroid = centroidOfPolygon(quad);
-          if (centroid && centroid.every((n) => Number.isFinite(n))) {
-            setViewCenter(centroid as [number, number]);
-          }
         }
-        if (mounted) setFootprintReady(true);
       } catch (e) {
         try { console.warn('MapboxScene: failed to load /building-quad.json', e); } catch {}
         // ignore - fallback to generated rectangle
-        if (mounted) setFootprintReady(true);
       }
     })();
     return () => { mounted = false; };
@@ -405,7 +396,7 @@ export default function MapboxScene({
     }
   }, [externalUnits, ready]);
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !token || !footprintReady) return;
+    if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
     const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
@@ -439,7 +430,7 @@ export default function MapboxScene({
       const map = new mapboxgl.Map({
         container: containerRef.current as HTMLElement,
         style: styleConfig as any,
-        center: viewCenter as LngLatLike,
+        center: center as LngLatLike,
         zoom: 17.6,
         pitch: 60,
         bearing: -20,
@@ -468,7 +459,7 @@ export default function MapboxScene({
             map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
           } else {
             // fallback: build rectangle from center
-            const [lng, lat] = center;
+            const [lng, lat] = buildingCenter;
             const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
             const dy = 0.00006;
             const fallback = [
@@ -488,7 +479,7 @@ export default function MapboxScene({
           map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
 
           // Add facade + balcony + glass approximation
-          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TOTAL_FLOORS);
+          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [buildingCenter]) as any, TOTAL_FLOORS);
           map.addSource("facade", { type: "geojson", data: facadeFC });
           // facade bands
           map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
@@ -544,7 +535,7 @@ export default function MapboxScene({
             unitsSourceData = { type: 'FeatureCollection', features };
             try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
           } else {
-            unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
+            unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [buildingCenter]) as any, units) as any;
           }
 
           map.addSource("units", { type: "geojson", data: unitsSourceData });
@@ -580,7 +571,7 @@ export default function MapboxScene({
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.jumpTo({ center: viewCenter as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+            map.jumpTo({ center: buildingCenter as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
           setReady(true);
@@ -644,12 +635,7 @@ export default function MapboxScene({
     });
 
     return () => { mapRef.current?.remove(); };
-  }, [token, footprintReady, footprint, units, onPick, viewCenter]);
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-    mapRef.current.easeTo({ center: viewCenter as LngLatLike, duration: 1000 });
-  }, [viewCenter]);
+  }, [token, buildingCenter, footprint, units, onPick]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
