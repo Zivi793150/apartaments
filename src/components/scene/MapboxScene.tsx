@@ -14,12 +14,20 @@ export type MapboxSceneFilter = {
 const TOTAL_FLOORS = 6;
 const FLOOR_HEIGHT_M = 3.1;
 
-type UnitsTransform = {
-  matrix: [[number, number], [number, number]];
-  translate: [number, number];
-};
-
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
+
+type ExternalUnitFeature = GeoJSON.Feature & {
+  properties: (GeoJSON.GeoJsonProperties & {
+    floor?: number;
+    Floor?: number;
+    height?: number;
+    min_height?: number;
+    status?: string;
+    area?: number;
+    rooms?: number;
+    id?: string | number;
+  }) | null;
+};
 
 // Парсинг geojson квартир
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
@@ -36,18 +44,50 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
           // предполагаем, что properties содержит нужные данные
           const props = feat.properties || {};
           units.push({
-            id: props.id || `${f}-${units.length+1}`,
+            id: props.id || `${f}-${units.length + 1}`,
             floor: f,
             status: props.status || "available",
             area: props.area || 40,
             rooms: props.rooms || 2,
-            polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0,0],[1,0],[1,1],[0,1]],
+            polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0, 0], [1, 0], [1, 1], [0, 1]],
           });
         }
       }
     } catch {}
   }
   return units;
+}
+
+function ensureFloorsForExternalUnits(features: ExternalUnitFeature[], totalFloors: number): ExternalUnitFeature[] {
+  if (!features.length) return features;
+  const buckets: Record<string, ExternalUnitFeature[]> = {};
+  let maxExisting = 0;
+  features.forEach((feat) => {
+    const floor = Number(feat.properties?.floor ?? feat.properties?.Floor ?? 1) || 1;
+    const key = String(floor);
+    if (!buckets[key]) buckets[key] = [];
+    buckets[key].push(feat);
+    if (floor > maxExisting) maxExisting = floor;
+  });
+  if (maxExisting >= totalFloors) return features;
+  const floorKeys = Object.keys(buckets).map((k) => Number(k)).sort((a, b) => a - b);
+  const templateFloor = floorKeys[floorKeys.length - 1];
+  const templateUnits = buckets[String(templateFloor)] || [];
+  const clones: ExternalUnitFeature[] = [];
+  for (let f = maxExisting + 1; f <= totalFloors; f++) {
+    templateUnits.forEach((feat, idx) => {
+      const clone = JSON.parse(JSON.stringify(feat)) as ExternalUnitFeature;
+      clone.properties = {
+        ...(clone.properties || {}),
+        floor: f,
+        min_height: (f - 1) * FLOOR_HEIGHT_M + 0.02,
+        height: f * FLOOR_HEIGHT_M - 0.02,
+      };
+      clone.id = `${feat.id ?? `f${templateFloor}-${idx}`}-dup-${f}`;
+      clones.push(clone);
+    });
+  }
+  return [...features, ...clones];
 }
 
 // Билинейная проекция UV -> lngLat на четырехугольник (контур здания)
@@ -132,98 +172,20 @@ function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null):
   return hull.length >= 3 ? hull : null;
 }
 
-function orderPolygon(points: [number, number][]): [number, number][] {
-  if (!points.length) return [];
-  const [cx, cy] = centroidOfPolygon(points);
-  return [...points].sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
-}
-
-function pickTriangle(points: [number, number][]): [number, number][] | null {
-  if (points.length < 3) return null;
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    const c = points[(i + 2) % points.length];
-    const area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (Math.abs(area) > 1e-10) {
-      return [a, b, c];
-    }
-  }
-  return null;
-}
-
-function invert3x3(m: number[][]): number[][] | null {
-  const det =
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
-    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
-    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-  if (Math.abs(det) < 1e-12) return null;
-  const invDet = 1 / det;
-  const adj = [
-    [
-      m[1][1] * m[2][2] - m[1][2] * m[2][1],
-      -(m[0][1] * m[2][2] - m[0][2] * m[2][1]),
-      m[0][1] * m[1][2] - m[0][2] * m[1][1],
-    ],
-    [
-      -(m[1][0] * m[2][2] - m[1][2] * m[2][0]),
-      m[0][0] * m[2][2] - m[0][2] * m[2][0],
-      -(m[0][0] * m[1][2] - m[0][2] * m[1][0]),
-    ],
-    [
-      m[1][0] * m[2][1] - m[1][1] * m[2][0],
-      -(m[0][0] * m[2][1] - m[0][1] * m[2][0]),
-      m[0][0] * m[1][1] - m[0][1] * m[1][0],
-    ],
-  ];
-  return adj.map((row) => row.map((val) => val * invDet));
-}
-
-function multiplyMatrixVector(m: number[][], v: number[]): number[] {
-  return m.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
-}
-
-function computeAffineTransform(
-  source: [number, number][],
-  target: [number, number][]
-): UnitsTransform | null {
-  const srcTri = pickTriangle(orderPolygon(source));
-  const dstTri = pickTriangle(orderPolygon(target));
-  if (!srcTri || !dstTri) return null;
-  const system = srcTri.map((p) => [p[0], p[1], 1]);
-  const inv = invert3x3(system);
-  if (!inv) return null;
-  const coeffX = multiplyMatrixVector(inv, dstTri.map((p) => p[0]));
-  const coeffY = multiplyMatrixVector(inv, dstTri.map((p) => p[1]));
-  return {
-    matrix: [
-      [coeffX[0], coeffX[1]],
-      [coeffY[0], coeffY[1]],
-    ],
-    translate: [coeffX[2], coeffY[2]],
-  };
-}
-
-function transformPoint(pt: number[], transform: UnitsTransform): [number, number] {
-  const [[a, b], [c, d]] = transform.matrix;
-  const [tx, ty] = transform.translate;
-  return [a * pt[0] + b * pt[1] + tx, c * pt[0] + d * pt[1] + ty];
-}
-
-function transformGeometry(geometry: any, transform: UnitsTransform | null): any {
-  if (!geometry || !transform) return geometry;
-  const apply = (pt: number[]) => transformPoint(pt, transform);
+function offsetGeometry(geometry: any, offset: [number, number] | null): any {
+  if (!geometry || !offset) return geometry;
+  const shiftPoint = (pt: number[]): [number, number] => [pt[0] + offset[0], pt[1] + offset[1]];
   if (geometry.type === 'Polygon') {
     return {
       ...geometry,
-      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(apply)),
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(shiftPoint)),
     };
   }
   if (geometry.type === 'MultiPolygon') {
     return {
       ...geometry,
       coordinates: geometry.coordinates.map((poly: number[][][]) =>
-        poly.map((ring: number[][]) => ring.map(apply))
+        poly.map((ring: number[][]) => ring.map(shiftPoint))
       ),
     };
   }
@@ -262,16 +224,16 @@ export default function MapboxScene({
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const hasCustomFootprint = useRef(false);
-  const [unitsTransform, setUnitsTransform] = useState<UnitsTransform | null>(null);
+  const [unitsOffset, setUnitsOffset] = useState<[number, number] | null>(null);
 
-  const buildingCenter = useMemo<[number, number]>(() => {
+  const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
     const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
     return [lng, lat];
   }, []);
 
   const [footprint, setFootprint] = useState<[number, number][]>(() => {
-    const [lng, lat] = buildingCenter;
+    const [lng, lat] = center;
     const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
     const dy = 0.00006;
     return [
@@ -311,6 +273,7 @@ export default function MapboxScene({
           const f = json.features.find((ff: any) => ff.geometry && ff.geometry.type === 'Polygon');
           if (f) quad = normalizeRing(f.geometry.coordinates[0]) ?? null;
         }
+        if (quad && mounted) setFootprint(quad);
         if (quad && mounted) {
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
           setFootprint(quad);
@@ -351,26 +314,6 @@ export default function MapboxScene({
     })();
     return () => { mounted = false; };
   }, []);
-
-  useEffect(() => {
-    if (!externalUnits || !hasCustomFootprint.current) {
-      setUnitsTransform(null);
-      return;
-    }
-    const hull = deriveFootprintFromUnits(externalUnits);
-    if (!hull || !hull.length || !footprint.length) {
-      setUnitsTransform(null);
-      return;
-    }
-    const affine = computeAffineTransform(hull, footprint);
-    if (affine) {
-      setUnitsTransform(affine);
-      return;
-    }
-    const targetCentroid = centroidOfPolygon(footprint);
-    const hullCentroid = centroidOfPolygon(hull);
-    setUnitsTransform({ matrix: [[1, 0], [0, 1]], translate: [targetCentroid[0] - hullCentroid[0], targetCentroid[1] - hullCentroid[1]] });
-  }, [externalUnits, footprint]);
 
   useEffect(() => {
     if (!externalUnits || !ready || hasCustomFootprint.current) return;
@@ -459,7 +402,7 @@ export default function MapboxScene({
             map.addSource("our-footprint", { type: "geojson", data: { type: "Feature", id: "building", properties: { floors: FLOORS }, geometry: { type: "Polygon", coordinates: [polygonCoords! as any] } } });
           } else {
             // fallback: build rectangle from center
-            const [lng, lat] = buildingCenter;
+            const [lng, lat] = center;
             const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
             const dy = 0.00006;
             const fallback = [
@@ -479,7 +422,7 @@ export default function MapboxScene({
           map.addLayer({ id: "our-outline", type: "line", source: "our-footprint", paint: { "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#ff6e00", "#2b2b2b"], "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 4, 1] } });
 
           // Add facade + balcony + glass approximation
-          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [buildingCenter]) as any, TOTAL_FLOORS);
+          const facadeFC = makeFacadeFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, TOTAL_FLOORS);
           map.addSource("facade", { type: "geojson", data: facadeFC });
           // facade bands
           map.addLayer({ id: "facade-bands", type: "fill-extrusion", source: "facade", filter: ["==", ["get", "type"], "facade"], paint: { "fill-extrusion-color": "#f7f5f0", "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "min_height"], "fill-extrusion-opacity": 0.98 } });
@@ -494,7 +437,8 @@ export default function MapboxScene({
           let unitsSourceData: GeoJSON.FeatureCollection;
           if (externalUnits && externalUnits.type === 'FeatureCollection') {
             // Ensure features have an id and extrusion heights (Mapbox feature-state uses feature id)
-            const features = externalUnits.features.map((f: any, idx: number) => {
+            const normalizedFeatures = ensureFloorsForExternalUnits(externalUnits.features as ExternalUnitFeature[], TOTAL_FLOORS);
+            const features = normalizedFeatures.map((f: any, idx: number) => {
               const copy = { ...f } as any;
               const props = { ...(copy.properties || {}) } as any;
               const floor = Number(isFinite(props.floor) ? props.floor : 1);
@@ -516,7 +460,7 @@ export default function MapboxScene({
               if (typeof copy.id === 'undefined') {
                 copy.id = props.id ? String(props.id) : `ext-${idx}`;
               }
-              copy.geometry = transformGeometry(copy.geometry, unitsTransform);
+              copy.geometry = offsetGeometry(copy.geometry, unitsOffset);
               if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
                 copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
                   poly.map((ring: number[][]) => {
@@ -535,7 +479,7 @@ export default function MapboxScene({
             unitsSourceData = { type: 'FeatureCollection', features };
             try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
           } else {
-            unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [buildingCenter]) as any, units) as any;
+            unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
           }
 
           map.addSource("units", { type: "geojson", data: unitsSourceData });
@@ -571,7 +515,7 @@ export default function MapboxScene({
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.jumpTo({ center: buildingCenter as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+            map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
           setReady(true);
@@ -635,7 +579,7 @@ export default function MapboxScene({
     });
 
     return () => { mapRef.current?.remove(); };
-  }, [token, buildingCenter, footprint, units, onPick]);
+  }, [token, center, footprint, units, onPick]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
