@@ -324,13 +324,17 @@ export default function MapboxScene({
   }, [externalUnits, footprint]);
 
   useEffect(() => {
-    if (!externalUnits || !ready || hasCustomFootprint.current) return;
+    if (!externalUnits || hasCustomFootprint.current) return;
     const derived = deriveFootprintFromUnits(externalUnits);
     if (!derived || derived.length < 4) return;
     setFootprint(derived);
+  }, [externalUnits]);
+
+  useEffect(() => {
+    if (!ready || !footprint.length) return;
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
-    const polygonCoords = [...derived, derived[0]];
+    const polygonCoords = [...footprint, footprint[0]];
     const footprintFeature = {
       type: 'Feature',
       id: 'building',
@@ -343,9 +347,17 @@ export default function MapboxScene({
     }
     const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
     if (facadeSource) {
-      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TOTAL_FLOORS));
+      facadeSource.setData(makeFacadeFeatureCollection((footprint as any), TOTAL_FLOORS));
     }
-  }, [externalUnits, ready]);
+  }, [footprint, ready]);
+
+  useEffect(() => {
+    if (!ready || !hasCustomFootprint.current || !footprint.length) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const target = centroidOfPolygon(footprint);
+    map.jumpTo({ center: target as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+  }, [ready, footprint]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
