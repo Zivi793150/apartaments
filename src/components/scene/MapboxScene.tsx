@@ -159,6 +159,52 @@ function offsetGeometry(geometry: any, offset: [number, number] | null): any {
   return geometry;
 }
 
+function makeExternalUnitsFeatureCollection(
+  externalUnits: GeoJSON.FeatureCollection,
+  unitsTransform: UnitsTransform | null,
+): GeoJSON.FeatureCollection {
+  const features = externalUnits.features.map((f: any, idx: number) => {
+    const copy = { ...f } as any;
+    const props = { ...(copy.properties || {}) } as any;
+    const floor = Number(isFinite(props.floor) ? props.floor : 1);
+    const status = String(props.status || 'available').toLowerCase();
+    const statusMap: Record<string, Unit['status']> = {
+      available: 'available',
+      aviable: 'available',
+      free: 'available',
+      reserved: 'reserved',
+      booked: 'reserved',
+      sold: 'sold',
+      xz: 'reserved',
+    };
+    props.status = statusMap[status] || 'available';
+    props.min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+    props.height = floor * FLOOR_HEIGHT_M - 0.02;
+    props.floor = floor;
+    copy.properties = props;
+    if (typeof copy.id === 'undefined') {
+      copy.id = props.id ? String(props.id) : `ext-${idx}`;
+    }
+    copy.geometry = transformGeometry(copy.geometry, unitsTransform);
+    if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
+      copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => {
+          if (!ring.length) return ring;
+          const first = ring[0];
+          const last = ring[ring.length - 1];
+          if (first[0] !== last[0] || first[1] !== last[1]) {
+            return [...ring, first];
+          }
+          return ring;
+        })
+      );
+    }
+    return copy;
+  });
+  try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
+  return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
+}
+
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
   return {
     type: "FeatureCollection",
@@ -361,6 +407,29 @@ export default function MapboxScene({
   }, []);
 
   useEffect(() => {
+    if (!externalUnits || !hasCustomFootprint.current || footprint.length < 3) {
+      setUnitsTransform(null);
+      return;
+    }
+    const hull = deriveFootprintFromUnits(externalUnits);
+    if (!hull || hull.length < 3) {
+      setUnitsTransform(null);
+      return;
+    }
+    const transform = buildUnitsTransform(hull, footprint);
+    setUnitsTransform(transform);
+  }, [externalUnits, footprint]);
+
+  useEffect(() => {
+    if (!mapRef.current || !mapRef.current.isStyleLoaded()) return;
+    if (!externalUnits) return;
+    const unitsSource = mapRef.current.getSource("units") as GeoJSONSource | undefined;
+    if (!unitsSource) return;
+    const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
+    unitsSource.setData(data as any);
+  }, [unitsTransform, externalUnits]);
+
+  useEffect(() => {
     if (!externalUnits || !ready || hasCustomFootprint.current) return;
     const derived = deriveFootprintFromUnits(externalUnits);
     if (!derived || derived.length < 4) return;
@@ -481,47 +550,7 @@ export default function MapboxScene({
           // Квартиры: добавляем source и слои (оставляем поверх фасада)
           let unitsSourceData: GeoJSON.FeatureCollection;
           if (externalUnits && externalUnits.type === 'FeatureCollection') {
-            // Ensure features have an id and extrusion heights (Mapbox feature-state uses feature id)
-            const features = externalUnits.features.map((f: any, idx: number) => {
-              const copy = { ...f } as any;
-              const props = { ...(copy.properties || {}) } as any;
-              const floor = Number(isFinite(props.floor) ? props.floor : 1);
-              const status = String(props.status || 'available').toLowerCase();
-              const statusMap: Record<string, Unit['status']> = {
-                available: 'available',
-                aviable: 'available',
-                free: 'available',
-                reserved: 'reserved',
-                booked: 'reserved',
-                sold: 'sold',
-                xz: 'reserved',
-              };
-              props.status = statusMap[status] || 'available';
-              props.min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
-              props.height = floor * FLOOR_HEIGHT_M - 0.02;
-              props.floor = floor;
-              copy.properties = props;
-              if (typeof copy.id === 'undefined') {
-                copy.id = props.id ? String(props.id) : `ext-${idx}`;
-              }
-              copy.geometry = transformGeometry(copy.geometry, unitsTransform);
-              if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
-                copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
-                  poly.map((ring: number[][]) => {
-                    if (!ring.length) return ring;
-                    const first = ring[0];
-                    const last = ring[ring.length - 1];
-                    if (first[0] !== last[0] || first[1] !== last[1]) {
-                      return [...ring, first];
-                    }
-                    return ring;
-                  })
-                );
-              }
-              return copy;
-            });
-            unitsSourceData = { type: 'FeatureCollection', features };
-            try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
+            unitsSourceData = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
           } else {
             unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
           }
