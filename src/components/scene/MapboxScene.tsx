@@ -232,6 +232,8 @@ export default function MapboxScene({
     return [lng, lat];
   }, []);
 
+  const [sceneCenter, setSceneCenter] = useState<[number, number]>(center);
+
   const [footprint, setFootprint] = useState<[number, number][]>(() => {
     const [lng, lat] = center;
     const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
@@ -273,11 +275,19 @@ export default function MapboxScene({
           const f = json.features.find((ff: any) => ff.geometry && ff.geometry.type === 'Polygon');
           if (f) quad = normalizeRing(f.geometry.coordinates[0]) ?? null;
         }
-        if (quad && mounted) setFootprint(quad);
+        if (quad && quad.length >= 3) {
+          const hull = convexHull(quad);
+          if (hull && hull.length >= 3) quad = hull as any;
+        }
         if (quad && mounted) {
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
           setFootprint(quad);
           hasCustomFootprint.current = true;
+          const centroid = centroidOfPolygon(quad);
+          setSceneCenter(centroid);
+          if (mapRef.current) {
+            try { mapRef.current.jumpTo({ center: centroid as LngLatLike }); } catch {}
+          }
         }
       } catch (e) {
         try { console.warn('MapboxScene: failed to load /building-quad.json', e); } catch {}
@@ -320,6 +330,8 @@ export default function MapboxScene({
     const derived = deriveFootprintFromUnits(externalUnits);
     if (!derived || derived.length < 4) return;
     setFootprint(derived);
+    const derivedCenter = centroidOfPolygon(derived);
+    setSceneCenter(derivedCenter);
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
     const polygonCoords = [...derived, derived[0]];
@@ -373,7 +385,7 @@ export default function MapboxScene({
       const map = new mapboxgl.Map({
         container: containerRef.current as HTMLElement,
         style: styleConfig as any,
-        center: center as LngLatLike,
+        center: sceneCenter as LngLatLike,
         zoom: 17.6,
         pitch: 60,
         bearing: -20,
@@ -515,7 +527,7 @@ export default function MapboxScene({
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+            map.jumpTo({ center: sceneCenter as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
           setReady(true);
@@ -579,7 +591,14 @@ export default function MapboxScene({
     });
 
     return () => { mapRef.current?.remove(); };
-  }, [token, center, footprint, units, onPick]);
+  }, [token, sceneCenter, footprint, units, onPick]);
+
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    try {
+      mapRef.current.jumpTo({ center: sceneCenter as LngLatLike });
+    } catch {}
+  }, [sceneCenter, ready]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
