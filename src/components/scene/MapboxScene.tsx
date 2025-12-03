@@ -264,14 +264,17 @@ export default function MapboxScene({
   const hasCustomFootprint = useRef(false);
   const [unitsTransform, setUnitsTransform] = useState<UnitsTransform | null>(null);
 
-  const center = useMemo<[number, number]>(() => {
+  const defaultCenter = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
     const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
     return [lng, lat];
   }, []);
 
+  const [viewCenter, setViewCenter] = useState<[number, number]>(defaultCenter);
+  const [footprintReady, setFootprintReady] = useState(false);
+
   const [footprint, setFootprint] = useState<[number, number][]>(() => {
-    const [lng, lat] = center;
+    const [lng, lat] = defaultCenter;
     const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
     const dy = 0.00006;
     return [
@@ -315,10 +318,16 @@ export default function MapboxScene({
           try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
           setFootprint(quad);
           hasCustomFootprint.current = true;
+          const centroid = centroidOfPolygon(quad);
+          if (centroid && centroid.every((n) => Number.isFinite(n))) {
+            setViewCenter(centroid as [number, number]);
+          }
         }
+        if (mounted) setFootprintReady(true);
       } catch (e) {
         try { console.warn('MapboxScene: failed to load /building-quad.json', e); } catch {}
         // ignore - fallback to generated rectangle
+        if (mounted) setFootprintReady(true);
       }
     })();
     return () => { mounted = false; };
@@ -396,7 +405,7 @@ export default function MapboxScene({
     }
   }, [externalUnits, ready]);
   useEffect(() => {
-    if (!containerRef.current || mapRef.current || !token) return;
+    if (!containerRef.current || mapRef.current || !token || !footprintReady) return;
     mapboxgl.accessToken = token;
 
     const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
@@ -430,7 +439,7 @@ export default function MapboxScene({
       const map = new mapboxgl.Map({
         container: containerRef.current as HTMLElement,
         style: styleConfig as any,
-        center: center as LngLatLike,
+        center: viewCenter as LngLatLike,
         zoom: 17.6,
         pitch: 60,
         bearing: -20,
@@ -571,7 +580,7 @@ export default function MapboxScene({
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+            map.jumpTo({ center: viewCenter as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
           setReady(true);
@@ -635,7 +644,12 @@ export default function MapboxScene({
     });
 
     return () => { mapRef.current?.remove(); };
-  }, [token, center, footprint, units, onPick]);
+  }, [token, footprintReady, footprint, units, onPick, viewCenter]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    mapRef.current.easeTo({ center: viewCenter as LngLatLike, duration: 1000 });
+  }, [viewCenter]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
