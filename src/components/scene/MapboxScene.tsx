@@ -14,13 +14,19 @@ export type MapboxSceneFilter = {
 const TOTAL_FLOORS = 6;
 const FLOOR_HEIGHT_M = 3.1;
 
-type UnitsTransform = {
-  pivot: [number, number];
-  offset: [number, number];
-  rotation: number;
+type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
+
+type AxisBasis = {
+  center: [number, number];
+  axes: [[number, number], [number, number]];
+  spreads: [number, number];
 };
 
-type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
+type UnitsTransform = {
+  source: AxisBasis;
+  target: AxisBasis;
+  scales: [number, number];
+};
 
 // Парсинг geojson квартир
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
@@ -122,20 +128,6 @@ function centroidOfPolygon(points: [number, number][]): [number, number] {
   return [sum[0] / points.length, sum[1] / points.length];
 }
 
-function dominantAngle(points: [number, number][]): number {
-  if (!points.length) return 0;
-  const [cx, cy] = centroidOfPolygon(points);
-  let sxx = 0, sxy = 0, syy = 0;
-  for (const [x, y] of points) {
-    const dx = x - cx;
-    const dy = y - cy;
-    sxx += dx * dx;
-    sxy += dx * dy;
-    syy += dy * dy;
-  }
-  return 0.5 * Math.atan2(2 * sxy, sxx - syy);
-}
-
 function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null): [number, number][] | null {
   if (!collection || !Array.isArray(collection.features)) return null;
   const pts: [number, number][] = [];
@@ -147,32 +139,20 @@ function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null):
   return hull.length >= 3 ? hull : null;
 }
 
-function transformGeometry(geometry: any, transform: UnitsTransform | null): any {
-  if (!geometry || !transform) return geometry;
-  const { pivot, offset, rotation } = transform;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  const apply = (pt: number[]): [number, number] => {
-    let [x, y] = pt;
-    if (rotation !== 0) {
-      const dx = x - pivot[0];
-      const dy = y - pivot[1];
-      x = pivot[0] + dx * cos - dy * sin;
-      y = pivot[1] + dx * sin + dy * cos;
-    }
-    return [x + offset[0], y + offset[1]];
-  };
+function offsetGeometry(geometry: any, offset: [number, number] | null): any {
+  if (!geometry || !offset) return geometry;
+  const shiftPoint = (pt: number[]): [number, number] => [pt[0] + offset[0], pt[1] + offset[1]];
   if (geometry.type === 'Polygon') {
     return {
       ...geometry,
-      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(apply)),
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(shiftPoint)),
     };
   }
   if (geometry.type === 'MultiPolygon') {
     return {
       ...geometry,
       coordinates: geometry.coordinates.map((poly: number[][][]) =>
-        poly.map((ring: number[][]) => ring.map(apply))
+        poly.map((ring: number[][]) => ring.map(shiftPoint))
       ),
     };
   }
@@ -196,6 +176,84 @@ function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
       };
     })
   } as GeoJSON.FeatureCollection;
+}
+
+function normalizeVector(vec: [number, number]): [number, number] {
+  const len = Math.hypot(vec[0], vec[1]) || 1;
+  return [vec[0] / len, vec[1] / len];
+}
+
+function computeAxisBasis(points: [number, number][]): AxisBasis | null {
+  if (!points.length) return null;
+  const center = centroidOfPolygon(points);
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const [x, y] of points) {
+    const dx = x - center[0];
+    const dy = y - center[1];
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
+  }
+  const n = points.length || 1;
+  const covXX = sxx / n;
+  const covYY = syy / n;
+  const covXY = sxy / n;
+  const trace = covXX + covYY;
+  const det = covXX * covYY - covXY * covXY;
+  const discr = Math.max(trace * trace / 4 - det, 0);
+  const lambda1 = trace / 2 + Math.sqrt(discr);
+  const lambda2 = trace / 2 - Math.sqrt(discr);
+  let axis1: [number, number];
+  if (Math.abs(covXY) > 1e-9) {
+    axis1 = [lambda1 - covYY, covXY];
+  } else {
+    axis1 = covXX >= covYY ? [1, 0] : [0, 1];
+  }
+  axis1 = normalizeVector(axis1);
+  const axis2: [number, number] = [-axis1[1], axis1[0]];
+  const spreads: [number, number] = [Math.sqrt(Math.max(lambda1, 1e-12)), Math.sqrt(Math.max(lambda2, 1e-12))];
+  return { center, axes: [axis1, axis2], spreads };
+}
+
+function buildUnitsTransform(sourcePoints: [number, number][], targetPoints: [number, number][]): UnitsTransform | null {
+  const source = computeAxisBasis(sourcePoints);
+  const target = computeAxisBasis(targetPoints);
+  if (!source || !target) return null;
+  const scale1 = target.spreads[0] / (source.spreads[0] || 1);
+  const scale2 = target.spreads[1] / (source.spreads[1] || 1);
+  return { source, target, scales: [scale1, scale2] };
+}
+
+function transformPointUsingBasis(pt: [number, number], transform: UnitsTransform): [number, number] {
+  const { source, target, scales } = transform;
+  const rel: [number, number] = [pt[0] - source.center[0], pt[1] - source.center[1]];
+  const proj1 = rel[0] * source.axes[0][0] + rel[1] * source.axes[0][1];
+  const proj2 = rel[0] * source.axes[1][0] + rel[1] * source.axes[1][1];
+  const mapped: [number, number] = [
+    proj1 * scales[0] * target.axes[0][0] + proj2 * scales[1] * target.axes[1][0],
+    proj1 * scales[0] * target.axes[0][1] + proj2 * scales[1] * target.axes[1][1],
+  ];
+  return [mapped[0] + target.center[0], mapped[1] + target.center[1]];
+}
+
+function transformGeometry(geometry: any, transform: UnitsTransform | null): any {
+  if (!geometry || !transform) return geometry;
+  const apply = (pt: number[]): [number, number] => transformPointUsingBasis([pt[0], pt[1]], transform);
+  if (geometry.type === 'Polygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(apply)),
+    };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => ring.map(apply))
+      ),
+    };
+  }
+  return geometry;
 }
 
 export default function MapboxScene({
@@ -303,38 +361,13 @@ export default function MapboxScene({
   }, []);
 
   useEffect(() => {
-    if (hasCustomFootprint.current && externalUnits) {
-      const hull = deriveFootprintFromUnits(externalUnits);
-      if (hull && hull.length) {
-        const targetCentroid = centroidOfPolygon(footprint);
-        const hullCentroid = centroidOfPolygon(hull);
-        const targetAngle = dominantAngle(footprint);
-        const hullAngle = dominantAngle(hull);
-        setUnitsTransform({
-          pivot: hullCentroid,
-          offset: [targetCentroid[0] - hullCentroid[0], targetCentroid[1] - hullCentroid[1]],
-          rotation: targetAngle - hullAngle,
-        });
-      } else {
-        setUnitsTransform(null);
-      }
-    } else {
-      setUnitsTransform(null);
-    }
-  }, [externalUnits, footprint]);
-
-  useEffect(() => {
-    if (!externalUnits || hasCustomFootprint.current) return;
+    if (!externalUnits || !ready || hasCustomFootprint.current) return;
     const derived = deriveFootprintFromUnits(externalUnits);
     if (!derived || derived.length < 4) return;
     setFootprint(derived);
-  }, [externalUnits]);
-
-  useEffect(() => {
-    if (!ready || !footprint.length) return;
     const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
-    const polygonCoords = [...footprint, footprint[0]];
+    const polygonCoords = [...derived, derived[0]];
     const footprintFeature = {
       type: 'Feature',
       id: 'building',
@@ -347,17 +380,9 @@ export default function MapboxScene({
     }
     const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
     if (facadeSource) {
-      facadeSource.setData(makeFacadeFeatureCollection((footprint as any), TOTAL_FLOORS));
+      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TOTAL_FLOORS));
     }
-  }, [footprint, ready]);
-
-  useEffect(() => {
-    if (!ready || !hasCustomFootprint.current || !footprint.length) return;
-    const map = mapRef.current;
-    if (!map) return;
-    const target = centroidOfPolygon(footprint);
-    map.jumpTo({ center: target as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
-  }, [ready, footprint]);
+  }, [externalUnits, ready]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
