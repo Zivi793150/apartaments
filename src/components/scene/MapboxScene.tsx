@@ -57,6 +57,30 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   return units;
 }
 
+async function loadFloorFeatureCollection(): Promise<GeoJSON.FeatureCollection | null> {
+  const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
+  const features: GeoJSON.Feature[] = [];
+  for (const f of floors) {
+    try {
+      const fileName = `floor${f}.geojson`;
+      const res = await fetch(`/plans/geojson/${fileName}`);
+      if (!res.ok) continue;
+      const geojson = await res.json();
+      if (geojson && Array.isArray(geojson.features)) {
+        for (const feat of geojson.features) {
+          features.push({
+            ...(feat as GeoJSON.Feature),
+            properties: { ...(feat.properties || {}), floor: f },
+          });
+        }
+      }
+    } catch {
+      // ignore missing floor file
+    }
+  }
+  return features.length ? { type: 'FeatureCollection', features } : null;
+}
+
 // Билинейная проекция UV -> lngLat на четырехугольник (контур здания)
 function uvToLngLat(uv: [number, number], quad: [number, number][]) {
   const [u, v] = uv;
@@ -159,14 +183,11 @@ function offsetGeometry(geometry: any, offset: [number, number] | null): any {
   return geometry;
 }
 
-function makeGeoJsonUnitsFeatureCollection(
-  source: GeoJSON.FeatureCollection,
-  {
-    transform = null,
-    label = 'geojson',
-  }: { transform?: UnitsTransform | null; label?: string } = {},
+function makeExternalUnitsFeatureCollection(
+  externalUnits: GeoJSON.FeatureCollection,
+  unitsTransform: UnitsTransform | null,
 ): GeoJSON.FeatureCollection {
-  const features = source.features.map((f: any, idx: number) => {
+  const features = externalUnits.features.map((f: any, idx: number) => {
     const copy = { ...f } as any;
     const props = { ...(copy.properties || {}) } as any;
     const floor = Number(isFinite(props.floor) ? props.floor : 1);
@@ -188,9 +209,7 @@ function makeGeoJsonUnitsFeatureCollection(
     if (typeof copy.id === 'undefined') {
       copy.id = props.id ? String(props.id) : `ext-${idx}`;
     }
-    if (transform) {
-      copy.geometry = transformGeometry(copy.geometry, transform);
-    }
+    copy.geometry = transformGeometry(copy.geometry, unitsTransform);
     if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
       copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
         poly.map((ring: number[][]) => {
@@ -206,7 +225,7 @@ function makeGeoJsonUnitsFeatureCollection(
     }
     return copy;
   });
-  try { console.info(`MapboxScene: using ${label} with`, features.length, 'features'); } catch {}
+  try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
   return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
 }
 
@@ -321,7 +340,6 @@ export default function MapboxScene({
   const [ready, setReady] = useState(false);
   const hasCustomFootprint = useRef(false);
   const [unitsTransform, setUnitsTransform] = useState<UnitsTransform | null>(null);
-  const [floorUnits, setFloorUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -387,60 +405,42 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
 
-  // fallback: load per-floor geojson files if present
+  // fallback UV units for demo/testing
   useEffect(() => {
     let mounted = true;
-    loadUnitsFromGeojson().then((data) => {
-      if (mounted && data.length) setUnits(data);
-    }).catch(() => {/* ignore */});
-    return () => { mounted = false; };
+    loadUnitsFromGeojson()
+      .then((data) => {
+        if (mounted && data.length) setUnits(data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // Try to load optional units.geojson (pre-drawn apartment polygons) from public
+  // Load detailed per-floor GeoJSON (floor1..floor6). If absent, fall back to legacy units.geojson
   useEffect(() => {
     let mounted = true;
     (async () => {
+      const floorsFC = await loadFloorFeatureCollection();
+      if (mounted && floorsFC) {
+        setExternalUnits(floorsFC);
+        return;
+      }
       try {
         const res = await fetch('/plans/geojson/units.geojson');
         if (!res.ok) return;
         const json = await res.json();
-        if (mounted && json && json.type === 'FeatureCollection') setExternalUnits(json as GeoJSON.FeatureCollection);
-      } catch (e) {
+        if (mounted && json && json.type === 'FeatureCollection') {
+          setExternalUnits(json as GeoJSON.FeatureCollection);
+        }
+      } catch {
         // ignore
       }
     })();
-    return () => { mounted = false; };
-  }, []);
-
-  // Load per-floor geojson files (floor1-6) if available
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const features: GeoJSON.Feature[] = [];
-      for (let f = 1; f <= TOTAL_FLOORS; f++) {
-        try {
-          const res = await fetch(`/plans/geojson/floor${f}.geojson`);
-          if (!res.ok) continue;
-          const json = await res.json();
-          if (!json || json.type !== 'FeatureCollection' || !Array.isArray(json.features)) continue;
-          json.features.forEach((feat: any, idx: number) => {
-            const copy = { ...feat };
-            const props = { ...(copy.properties || {}) };
-            const floor = Number(isFinite(props.floor) ? props.floor : f) || f;
-            props.floor = floor;
-            copy.properties = props;
-            copy.id = copy.id ?? props.id ?? `floor-${f}-${idx}`;
-            features.push(copy as GeoJSON.Feature);
-          });
-        } catch (err) {
-          // ignore errors per floor
-        }
-      }
-      if (mounted && features.length) {
-        setFloorUnits({ type: 'FeatureCollection', features } as GeoJSON.FeatureCollection);
-      }
-    })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -458,20 +458,13 @@ export default function MapboxScene({
   }, [externalUnits, footprint]);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const unitsSource = map.getSource("units") as GeoJSONSource | undefined;
+    if (!mapRef.current || !mapRef.current.isStyleLoaded()) return;
+    if (!externalUnits) return;
+    const unitsSource = mapRef.current.getSource("units") as GeoJSONSource | undefined;
     if (!unitsSource) return;
-    let data: GeoJSON.FeatureCollection | null = null;
-    if (floorUnits && floorUnits.features.length) {
-      data = makeGeoJsonUnitsFeatureCollection(floorUnits, { label: 'floor geojson' });
-    } else if (externalUnits && externalUnits.features.length) {
-      data = makeGeoJsonUnitsFeatureCollection(externalUnits, { transform: unitsTransform, label: 'external units.geojson' });
-    } else if (units.length && footprint.length >= 3) {
-      data = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
-    }
-    if (data) unitsSource.setData(data as any);
-  }, [unitsTransform, externalUnits, floorUnits, units, footprint, center]);
+    const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
+    unitsSource.setData(data as any);
+  }, [unitsTransform, externalUnits]);
 
   useEffect(() => {
     if (!externalUnits || !ready || hasCustomFootprint.current) return;
@@ -593,10 +586,8 @@ export default function MapboxScene({
 
           // Квартиры: добавляем source и слои (оставляем поверх фасада)
           let unitsSourceData: GeoJSON.FeatureCollection;
-          if (floorUnits && floorUnits.features.length) {
-            unitsSourceData = makeGeoJsonUnitsFeatureCollection(floorUnits, { label: 'floor geojson' });
-          } else if (externalUnits && externalUnits.type === 'FeatureCollection') {
-            unitsSourceData = makeGeoJsonUnitsFeatureCollection(externalUnits, { transform: unitsTransform, label: 'external units.geojson' });
+          if (externalUnits && externalUnits.type === 'FeatureCollection') {
+            unitsSourceData = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
           } else {
             unitsSourceData = makeUnitsFeatureCollection((Array.isArray(footprint) ? (footprint as any) : [center]) as any, units) as any;
           }
