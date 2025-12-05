@@ -458,14 +458,13 @@ export default function MapboxScene({
   }, [externalUnits, footprint]);
 
   useEffect(() => {
-    if (!ready) return;
-    const map = mapRef.current;
-    if (!map || !externalUnits) return;
-    const unitsSource = map.getSource("units") as GeoJSONSource | undefined;
+    if (!mapRef.current || !mapRef.current.isStyleLoaded()) return;
+    if (!externalUnits) return;
+    const unitsSource = mapRef.current.getSource("units") as GeoJSONSource | undefined;
     if (!unitsSource) return;
     const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
     unitsSource.setData(data as any);
-  }, [unitsTransform, externalUnits, ready]);
+  }, [unitsTransform, externalUnits]);
 
   useEffect(() => {
     if (!externalUnits || !ready || hasCustomFootprint.current) return;
@@ -690,7 +689,7 @@ export default function MapboxScene({
     });
 
     return () => { mapRef.current?.remove(); };
-  }, [token, center, footprint, units, onPick]);
+  }, [token, center, onPick]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
