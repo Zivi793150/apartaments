@@ -458,13 +458,14 @@ export default function MapboxScene({
   }, [externalUnits, footprint]);
 
   useEffect(() => {
-    if (!mapRef.current || !mapRef.current.isStyleLoaded()) return;
-    if (!externalUnits) return;
-    const unitsSource = mapRef.current.getSource("units") as GeoJSONSource | undefined;
+    if (!ready) return;
+    const map = mapRef.current;
+    if (!map || !externalUnits) return;
+    const unitsSource = map.getSource("units") as GeoJSONSource | undefined;
     if (!unitsSource) return;
     const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
     unitsSource.setData(data as any);
-  }, [unitsTransform, externalUnits]);
+  }, [unitsTransform, externalUnits, ready]);
 
   useEffect(() => {
     if (!externalUnits || !ready || hasCustomFootprint.current) return;
