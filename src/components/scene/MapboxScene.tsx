@@ -61,21 +61,33 @@ async function loadFloorFeatureCollection(): Promise<GeoJSON.FeatureCollection |
   const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
   const features: GeoJSON.Feature[] = [];
   for (const f of floors) {
-    try {
-      const fileName = `floor${f}.geojson`;
-      const res = await fetch(`/plans/geojson/${fileName}`);
-      if (!res.ok) continue;
-      const geojson = await res.json();
-      if (geojson && Array.isArray(geojson.features)) {
-        for (const feat of geojson.features) {
-          features.push({
-            ...(feat as GeoJSON.Feature),
-            properties: { ...(feat.properties || {}), floor: f },
-          });
+    const candidates = [
+      `floor${f}.geojson`,
+      `FLOOR${f}.geojson`,
+      `Floor${f}.geojson`,
+    ];
+    let loaded = false;
+    for (const fileName of candidates) {
+      try {
+        const res = await fetch(`/plans/geojson/${fileName}`);
+        if (!res.ok) continue;
+        const geojson = await res.json();
+        if (geojson && Array.isArray(geojson.features)) {
+          for (const feat of geojson.features) {
+            features.push({
+              ...(feat as GeoJSON.Feature),
+              properties: { ...(feat.properties || {}), floor: f },
+            });
+          }
+          loaded = true;
+          break;
         }
+      } catch {
+        // ignore missing floor file variant
       }
-    } catch {
-      // ignore missing floor file
+    }
+    if (!loaded) {
+      try { console.warn(`MapboxScene: floor file ${f} not found (checked ${candidates.join(', ')})`); } catch {}
     }
   }
   return features.length ? { type: 'FeatureCollection', features } : null;
