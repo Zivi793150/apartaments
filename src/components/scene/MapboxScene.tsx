@@ -57,32 +57,25 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   return units;
 }
 
-async function fetchFloorFile(floor: number, variant: 'lower' | 'upper'): Promise<GeoJSON.FeatureCollection | null> {
-  const suffix = variant === 'lower' ? `floor${floor}.geojson` : `FLOOR${floor}.geojson`;
-  try {
-    const res = await fetch(`/plans/geojson/${suffix}`);
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json && json.type === 'FeatureCollection' ? (json as GeoJSON.FeatureCollection) : null;
-  } catch {
-    return null;
-  }
-}
-
 async function loadFloorFeatureCollection(): Promise<GeoJSON.FeatureCollection | null> {
   const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
   const features: GeoJSON.Feature[] = [];
   for (const f of floors) {
-    let geojson: GeoJSON.FeatureCollection | null = await fetchFloorFile(f, 'lower');
-    if (!geojson) {
-      geojson = await fetchFloorFile(f, 'upper');
-    }
-    if (!geojson || !Array.isArray(geojson.features)) continue;
-    for (const feat of geojson.features) {
-      features.push({
-        ...(feat as GeoJSON.Feature),
-        properties: { ...(feat.properties || {}), floor: f },
-      });
+    try {
+      const fileName = `floor${f}.geojson`;
+      const res = await fetch(`/plans/geojson/${fileName}`);
+      if (!res.ok) continue;
+      const geojson = await res.json();
+      if (geojson && Array.isArray(geojson.features)) {
+        for (const feat of geojson.features) {
+          features.push({
+            ...(feat as GeoJSON.Feature),
+            properties: { ...(feat.properties || {}), floor: f },
+          });
+        }
+      }
+    } catch {
+      // ignore missing floor file
     }
   }
   return features.length ? { type: 'FeatureCollection', features } : null;
