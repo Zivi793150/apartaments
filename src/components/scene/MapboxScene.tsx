@@ -13,6 +13,11 @@ export type MapboxSceneFilter = {
 
 const TOTAL_FLOORS = 6;
 const FLOOR_HEIGHT_M = 3.1;
+const FLOOR_SCALE_OVERRIDES: Record<number, number> = {
+  4: 0.015,
+  5: 0.025,
+  6: 0.035,
+};
 
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
 
@@ -35,7 +40,7 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
   for (const f of floors) {
     try {
       const fileName = `floor${f}.geojson`;
-      const res = await fetch(`/plans/geojson/${fileName}`);
+      const res = await fetch(`/plans/geojson/${fileName}`, { cache: "no-store" });
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && geojson.features) {
@@ -63,10 +68,11 @@ async function loadFloorFeatureCollection(): Promise<GeoJSON.FeatureCollection |
   for (const f of floors) {
     try {
       const fileName = `floor${f}.geojson`;
-      const res = await fetch(`/plans/geojson/${fileName}`);
+      const res = await fetch(`/plans/geojson/${fileName}`, { cache: "no-store" });
       if (!res.ok) continue;
       const geojson = await res.json();
       if (geojson && Array.isArray(geojson.features)) {
+        try { console.info(`MapboxScene: loaded ${fileName} with ${geojson.features.length} features`); } catch {}
         for (const feat of geojson.features) {
           features.push({
             ...(feat as GeoJSON.Feature),
@@ -183,9 +189,55 @@ function offsetGeometry(geometry: any, offset: [number, number] | null): any {
   return geometry;
 }
 
+function collectGeometryPoints(geometry: any): [number, number][] {
+  const points: [number, number][] = [];
+  const visit = (coords: any) => {
+    if (Array.isArray(coords) && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      if (Number.isFinite(coords[0]) && Number.isFinite(coords[1])) {
+        points.push([Number(coords[0]), Number(coords[1])]);
+      }
+      return;
+    }
+    if (Array.isArray(coords)) coords.forEach(visit);
+  };
+  visit(geometry?.coordinates);
+  return points;
+}
+
+function scaleGeometry(geometry: any, factor: number): any {
+  if (!geometry || !factor) return geometry;
+  const pts = collectGeometryPoints(geometry);
+  if (!pts.length) return geometry;
+  const center = centroidOfPolygon(pts);
+  const scalePoint = (pt: number[]): [number, number] => {
+    const scaled: [number, number] = [
+      center[0] + (pt[0] - center[0]) * (1 + factor),
+      center[1] + (pt[1] - center[1]) * (1 + factor),
+    ];
+    if (!Number.isFinite(scaled[0]) || !Number.isFinite(scaled[1])) return [pt[0], pt[1]];
+    return scaled;
+  };
+  if (geometry.type === 'Polygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(scalePoint)),
+    };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => ring.map(scalePoint))
+      ),
+    };
+  }
+  return geometry;
+}
+
 function makeExternalUnitsFeatureCollection(
   externalUnits: GeoJSON.FeatureCollection,
   unitsTransform: UnitsTransform | null,
+  opts?: { useRaw?: boolean }
 ): GeoJSON.FeatureCollection {
   const features = externalUnits.features.map((f: any, idx: number) => {
     const copy = { ...f } as any;
@@ -209,7 +261,12 @@ function makeExternalUnitsFeatureCollection(
     if (typeof copy.id === 'undefined') {
       copy.id = props.id ? String(props.id) : `ext-${idx}`;
     }
-    copy.geometry = transformGeometry(copy.geometry, unitsTransform);
+    let geom = copy.geometry;
+    if (opts?.useRaw && FLOOR_SCALE_OVERRIDES[floor]) {
+      geom = scaleGeometry(geom, FLOOR_SCALE_OVERRIDES[floor]);
+    }
+    geom = transformGeometry(geom, unitsTransform);
+    copy.geometry = geom;
     if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
       copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
         poly.map((ring: number[][]) => {
@@ -227,6 +284,31 @@ function makeExternalUnitsFeatureCollection(
   });
   try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
   return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
+}
+
+function computeFeatureCollectionBounds(fc: GeoJSON.FeatureCollection | null) {
+  if (!fc) return null;
+  let minLng = Number.POSITIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLng = Number.NEGATIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+  const visit = (coords: any) => {
+    if (typeof coords?.[0] === 'number' && typeof coords?.[1] === 'number') {
+      const [lng, lat] = coords;
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      minLng = Math.min(minLng, lng);
+      minLat = Math.min(minLat, lat);
+      maxLng = Math.max(maxLng, lng);
+      maxLat = Math.max(maxLat, lat);
+      return;
+    }
+    if (Array.isArray(coords)) coords.forEach(visit);
+  };
+  fc.features.forEach((feature) => {
+    visit((feature.geometry as any)?.coordinates);
+  });
+  if (!Number.isFinite(minLng)) return null;
+  return { min: [minLng, minLat], max: [maxLng, maxLat] } as const;
 }
 
 function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
@@ -308,7 +390,13 @@ function transformPointUsingBasis(pt: [number, number], transform: UnitsTransfor
 
 function transformGeometry(geometry: any, transform: UnitsTransform | null): any {
   if (!geometry || !transform) return geometry;
-  const apply = (pt: number[]): [number, number] => transformPointUsingBasis([pt[0], pt[1]], transform);
+  const apply = (pt: number[]): [number, number] => {
+    const mapped = transformPointUsingBasis([pt[0], pt[1]], transform);
+    if (!Number.isFinite(mapped[0]) || !Number.isFinite(mapped[1])) {
+      return [pt[0], pt[1]];
+    }
+    return mapped;
+  };
   if (geometry.type === 'Polygon') {
     return {
       ...geometry,
@@ -404,6 +492,7 @@ export default function MapboxScene({
 
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [useRawUnits, setUseRawUnits] = useState(false);
 
   // fallback UV units for demo/testing
   useEffect(() => {
@@ -425,6 +514,7 @@ export default function MapboxScene({
       const floorsFC = await loadFloorFeatureCollection();
       if (mounted && floorsFC) {
         setExternalUnits(floorsFC);
+        setUseRawUnits(true);
         return;
       }
       try {
@@ -433,6 +523,7 @@ export default function MapboxScene({
         const json = await res.json();
         if (mounted && json && json.type === 'FeatureCollection') {
           setExternalUnits(json as GeoJSON.FeatureCollection);
+          setUseRawUnits(false);
         }
       } catch {
         // ignore
@@ -444,7 +535,7 @@ export default function MapboxScene({
   }, []);
 
   useEffect(() => {
-    if (!externalUnits || !hasCustomFootprint.current || footprint.length < 3) {
+    if (!externalUnits || !hasCustomFootprint.current || footprint.length < 3 || useRawUnits) {
       setUnitsTransform(null);
       return;
     }
@@ -455,40 +546,79 @@ export default function MapboxScene({
     }
     const transform = buildUnitsTransform(hull, footprint);
     setUnitsTransform(transform);
-  }, [externalUnits, footprint]);
+  }, [externalUnits, footprint, useRawUnits]);
 
   useEffect(() => {
-    if (!mapRef.current || !mapRef.current.isStyleLoaded()) return;
     if (!externalUnits) return;
-    const unitsSource = mapRef.current.getSource("units") as GeoJSONSource | undefined;
-    if (!unitsSource) return;
-    const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
-    unitsSource.setData(data as any);
-  }, [unitsTransform, externalUnits]);
+    const map = mapRef.current;
+    if (!map) return;
+    const updateUnits = () => {
+      const unitsSource = map.getSource("units") as GeoJSONSource | undefined;
+      if (!unitsSource) return;
+      try { console.info('MapboxScene: updating units source', { features: externalUnits.features?.length ?? 0, hasTransform: !!unitsTransform, useRaw: useRawUnits }); } catch {}
+      const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform, { useRaw: useRawUnits });
+      unitsSource.setData(data as any);
+      const bounds = computeFeatureCollectionBounds(data);
+      if (bounds) {
+        const pad = 0.0001;
+        const sw: [number, number] = [bounds.min[0] - pad, bounds.min[1] - pad];
+        const ne: [number, number] = [bounds.max[0] + pad, bounds.max[1] + pad];
+        try { console.info('MapboxScene: units bounds', bounds); } catch {}
+        try { map.fitBounds([sw, ne], { padding: 50, duration: 800 }); } catch {}
+      }
+    };
+    if (map.isStyleLoaded()) {
+      updateUnits();
+      return;
+    }
+    const onData = () => {
+      if (!map.isStyleLoaded()) return;
+      map.off("styledata", onData);
+      updateUnits();
+    };
+    map.on("styledata", onData);
+    return () => {
+      map.off("styledata", onData);
+    };
+  }, [unitsTransform, externalUnits, useRawUnits]);
 
   useEffect(() => {
-    if (!externalUnits || !ready || hasCustomFootprint.current) return;
+    if (!externalUnits || hasCustomFootprint.current) return;
     const derived = deriveFootprintFromUnits(externalUnits);
     if (!derived || derived.length < 4) return;
     setFootprint(derived);
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const polygonCoords = [...derived, derived[0]];
-    const footprintFeature = {
-      type: 'Feature',
-      id: 'building',
-      properties: { floors: TOTAL_FLOORS },
-      geometry: { type: 'Polygon', coordinates: [polygonCoords] }
-    } as GeoJSON.Feature;
-    const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
-    if (footprintSource) {
-      footprintSource.setData(footprintFeature as any);
+    if (!map) return;
+    const updateFootprint = () => {
+      const polygonCoords = [...derived, derived[0]];
+      const footprintFeature = {
+        type: 'Feature',
+        id: 'building',
+        properties: { floors: TOTAL_FLOORS },
+        geometry: { type: 'Polygon', coordinates: [polygonCoords] }
+      } as GeoJSON.Feature;
+      const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
+      if (footprintSource) {
+        footprintSource.setData(footprintFeature as any);
+      }
+      const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
+      if (facadeSource) {
+        facadeSource.setData(makeFacadeFeatureCollection(derived as any, TOTAL_FLOORS));
+      }
+    };
+    if (map.isStyleLoaded()) {
+      updateFootprint();
+      return;
     }
-    const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
-    if (facadeSource) {
-      facadeSource.setData(makeFacadeFeatureCollection(derived as any, TOTAL_FLOORS));
-    }
-  }, [externalUnits, ready]);
+    const once = () => {
+      map.off("styledata", once);
+      updateFootprint();
+    };
+    map.on("styledata", once);
+    return () => {
+      map.off("styledata", once);
+    };
+  }, [externalUnits]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
@@ -590,7 +720,7 @@ export default function MapboxScene({
               ],
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.98,
+              "fill-extrusion-opacity": 1,
             }
           });
           map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": [
@@ -608,10 +738,10 @@ export default function MapboxScene({
             map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
           } catch(e) {}
 
-          setReady(true);
           } catch (e) {
             console.error('MapboxScene: error during map load:', e);
           }
+          setReady(true);
         });
       let lastHoverId: string | null = null;
       let lastBuildingHover = false;
@@ -655,8 +785,6 @@ export default function MapboxScene({
         const { area, rooms } = f.properties as any;
         onPick?.({ id: fid ?? (f.properties && f.properties.id) ?? null, area: Number(area), rooms: Number(rooms) });
       });
-
-      setReady(true);
     });
 
     return () => { mapRef.current?.remove(); };
