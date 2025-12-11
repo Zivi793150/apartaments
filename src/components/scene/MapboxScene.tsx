@@ -18,8 +18,55 @@ const FLOOR_SCALE_OVERRIDES: Record<number, number> = {
   5: 0.025,
   6: 0.035,
 };
+const emptyFeatureCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+const BALCONY_FALLBACK: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: { id: "balcony-l3", floor: 2 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.038977023510829, 36.773148311336989],
+            [-4.038928911693906, 36.773142308598672],
+            [-4.038906331644696, 36.77300317878764],
+            [-4.038953086095496, 36.77299834277639],
+            [-4.038977023510829, 36.773148311336989]
+          ]
+        ]
+      }
+    },
+    {
+      type: "Feature",
+      properties: { id: "balcony-l2", floor: 3 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.03895308607562, 36.772998342792285],
+            [-4.038977024011023, 36.77314831409106],
+            [-4.038928911647464, 36.773142308606197],
+            [-4.038906331644529, 36.773003178797943],
+            [-4.03895308607562, 36.772998342792285]
+          ]
+        ]
+      }
+    }
+  ]
+};
+const HOVER_EDGE_SCALE = 0.006;
+const HOVER_FACE_SCALE = -0.003;
+const HOVER_BASE_LIFT = 0.18;
 
 type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
+type BalconyProperties = {
+  floor?: number;
+  base?: number;
+  height?: number;
+  id?: string | number;
+};
 
 type AxisBasis = {
   center: [number, number];
@@ -256,11 +303,11 @@ function makeExternalUnitsFeatureCollection(
     props.status = statusMap[status] || 'available';
     props.min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
     props.height = floor * FLOOR_HEIGHT_M - 0.02;
+    props.cap_min_height = Math.max(props.min_height, props.height - 0.08);
     props.floor = floor;
     copy.properties = props;
-    if (typeof copy.id === 'undefined') {
-      copy.id = props.id ? String(props.id) : `ext-${idx}`;
-    }
+    const baseId = props.id ? String(props.id) : `ext-${idx}`;
+    copy.id = `${baseId}-f${floor}`;
     let geom = copy.geometry;
     if (opts?.useRaw && FLOOR_SCALE_OVERRIDES[floor]) {
       geom = scaleGeometry(geom, FLOOR_SCALE_OVERRIDES[floor]);
@@ -284,6 +331,52 @@ function makeExternalUnitsFeatureCollection(
   });
   try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
   return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
+}
+
+function makeBalconyFeatureCollection(
+  balconies: GeoJSON.FeatureCollection | null,
+  unitsTransform: UnitsTransform | null,
+  opts?: { useRaw?: boolean }
+): GeoJSON.FeatureCollection {
+  if (!balconies || !Array.isArray(balconies.features)) return emptyFeatureCollection;
+  const closeRing = (ring: number[][]) => {
+    if (!Array.isArray(ring) || !ring.length) return ring;
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (!last || first[0] !== last[0] || first[1] !== last[1]) {
+      return [...ring, first];
+    }
+    return ring;
+  };
+  const features = balconies.features.map((f: any, idx: number) => {
+    const copy = { ...f } as any;
+    const props: BalconyProperties = { ...(copy.properties || {}) };
+    const floor = Number(isFinite(props.floor as number) ? props.floor : 1);
+    const min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+    const height = floor * FLOOR_HEIGHT_M - 0.02;
+    copy.properties = { ...props, floor, min_height, height };
+    let geom = copy.geometry;
+    if (!(opts?.useRaw) && unitsTransform) {
+      geom = transformGeometry(geom, unitsTransform);
+    }
+    if (geom?.type === "Polygon") {
+      geom = {
+        ...geom,
+        coordinates: geom.coordinates.map((ring: number[][]) => closeRing(ring)),
+      };
+    } else if (geom?.type === "MultiPolygon") {
+      geom = {
+        ...geom,
+        coordinates: geom.coordinates.map((poly: number[][][]) =>
+          poly.map((ring: number[][]) => closeRing(ring))
+        ),
+      };
+    }
+    copy.geometry = geom;
+    copy.id = copy.id ?? props.id ?? `balcony-${idx}-f${floor}`;
+    return copy;
+  });
+  return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
 }
 
 function computeFeatureCollectionBounds(fc: GeoJSON.FeatureCollection | null) {
@@ -493,6 +586,7 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
   const [useRawUnits, setUseRawUnits] = useState(false);
+  const [balconyFeatures, setBalconyFeatures] = useState<GeoJSON.FeatureCollection | null>(BALCONY_FALLBACK);
 
   // fallback UV units for demo/testing
   useEffect(() => {
@@ -515,6 +609,18 @@ export default function MapboxScene({
       if (mounted && floorsFC) {
         setExternalUnits(floorsFC);
         setUseRawUnits(true);
+        try {
+          const balconRes = await fetch("/plans/geojson/balcon.geojson", { cache: "no-store" });
+          if (balconRes.ok) {
+            const balconJson = await balconRes.json();
+            if (mounted && balconJson?.type === "FeatureCollection") {
+              try { console.info("MapboxScene: loaded balcon.geojson with", balconJson.features?.length ?? 0, "features"); } catch {}
+              setBalconyFeatures(balconJson as GeoJSON.FeatureCollection);
+              return;
+            }
+          }
+        } catch {}
+        setBalconyFeatures(BALCONY_FALLBACK);
         return;
       }
       try {
@@ -528,6 +634,18 @@ export default function MapboxScene({
       } catch {
         // ignore
       }
+      try {
+        const balconRes = await fetch("/plans/geojson/balcon.geojson", { cache: "no-store" });
+        if (balconRes.ok) {
+          const balconJson = await balconRes.json();
+          if (mounted && balconJson?.type === "FeatureCollection") {
+            try { console.info("MapboxScene: loaded balcon.geojson with", balconJson.features?.length ?? 0, "features"); } catch {}
+            setBalconyFeatures(balconJson as GeoJSON.FeatureCollection);
+            return;
+          }
+        }
+      } catch {}
+      setBalconyFeatures(BALCONY_FALLBACK);
     })();
     return () => {
       mounted = false;
@@ -619,6 +737,17 @@ export default function MapboxScene({
       map.off("styledata", once);
     };
   }, [externalUnits]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource("balconies") as GeoJSONSource | undefined;
+    if (!source) return;
+    const data = makeBalconyFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits });
+    try { console.info("MapboxScene: updating balcony source", { features: data.features?.length ?? 0 }); } catch {}
+    source.setData(data as any);
+  }, [balconyFeatures, unitsTransform, useRawUnits, ready]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
@@ -666,7 +795,7 @@ export default function MapboxScene({
 
         map.on("load", () => {
           try {
-          // Наш дом: добавляем footprint и слой здания
+        // Наш дом: добавляем footprint и слой здания
           const polygonCoords = Array.isArray(footprint) && footprint.length >= 4 ? [...footprint, footprint[0]] : null;
           if (!polygonCoords) {
             console.warn('MapboxScene: invalid footprint, falling back to generated rectangle', footprint);
@@ -703,6 +832,12 @@ export default function MapboxScene({
           }
 
           map.addSource("units", { type: "geojson", data: unitsSourceData });
+          map.addSource("hover-unit", { type: "geojson", data: emptyFeatureCollection });
+          map.addSource("hover-edge", { type: "geojson", data: emptyFeatureCollection });
+          map.addSource("balconies", {
+            type: "geojson",
+            data: makeBalconyFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits })
+          });
           map.addLayer({
             id: "units-fill",
             type: "fill-extrusion",
@@ -710,7 +845,7 @@ export default function MapboxScene({
             paint: {
               "fill-extrusion-color": [
                 "case",
-                  ["boolean", ["feature-state", "hover"], false], "#f4c689",
+                  ["boolean", ["feature-state", "hover"], false], "#ffd9a1",
                   ["match", ["get", "status"],
                     "sold", "#d7c3a3",
                     "reserved", "#ffda9e",
@@ -723,15 +858,58 @@ export default function MapboxScene({
               "fill-extrusion-opacity": 1,
             }
           });
-          map.addLayer({ id: "units-outline", type: "line", source: "units", paint: { "line-color": [
-            "case",
-              ["boolean", ["feature-state", "hover"], false], "#a87938",
-              "#a87938"
-          ], "line-width": [
-            "case",
-              ["boolean", ["feature-state", "hover"], false], 3,
-              1.2
-          ] } });
+          map.addLayer({
+            id: "hover-edge-fill",
+            type: "fill-extrusion",
+            source: "hover-edge",
+            paint: {
+              "fill-extrusion-color": "#1eff65",
+              "fill-extrusion-height": [
+                "+",
+                ["get", "height"],
+                HOVER_BASE_LIFT
+              ],
+              "fill-extrusion-base": [
+                "+",
+                ["get", "min_height"],
+                HOVER_BASE_LIFT
+              ],
+              "fill-extrusion-opacity": 0.65,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
+          map.addLayer({
+            id: "hover-unit-fill",
+            type: "fill-extrusion",
+            source: "hover-unit",
+            paint: {
+              "fill-extrusion-color": "#ffe9c8",
+              "fill-extrusion-height": [
+                "+",
+                ["get", "height"],
+                HOVER_BASE_LIFT
+              ],
+              "fill-extrusion-base": [
+                "+",
+                ["get", "min_height"],
+                HOVER_BASE_LIFT
+              ],
+              "fill-extrusion-opacity": 0.96,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
+          map.addLayer({
+            id: "balcony-fill",
+            type: "fill-extrusion",
+            source: "balconies",
+            paint: {
+              "fill-extrusion-color": "#f7d7b0",
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0.92,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
 
           // Center and zoom closer to the building so facade is visible
           try {
@@ -744,6 +922,8 @@ export default function MapboxScene({
           setReady(true);
         });
       let lastHoverId: string | null = null;
+      const hoverSource = () => map.getSource("hover-unit") as GeoJSONSource | undefined;
+      const hoverEdgeSource = () => map.getSource("hover-edge") as GeoJSONSource | undefined;
       let lastBuildingHover = false;
       map.on("mousemove", "units-fill", (e) => {
         map.getCanvas().style.cursor = "pointer";
@@ -757,8 +937,42 @@ export default function MapboxScene({
         const { floor, status, area, rooms } = f.properties as any;
         tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
         if (fid && lastHoverId !== fid) {
-          if (lastHoverId) map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          if (lastHoverId) {
+            map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          }
           map.setFeatureState({ source: "units", id: fid }, { hover: true });
+          const hs = hoverSource();
+          if (hs) {
+            const baseMin = Number((f.properties as any)?.min_height ?? 0);
+            const baseHeight = Number((f.properties as any)?.height ?? baseMin + FLOOR_HEIGHT_M);
+            const faceGeom = scaleGeometry(f.geometry, HOVER_FACE_SCALE) ?? f.geometry;
+            const edgeGeom = scaleGeometry(f.geometry, HOVER_EDGE_SCALE) ?? f.geometry;
+            hs.setData({
+              type: "FeatureCollection",
+              features: [{
+                type: "Feature",
+                geometry: faceGeom,
+                properties: {
+                  min_height: baseMin + HOVER_BASE_LIFT,
+                  height: baseHeight - 0.04 + HOVER_BASE_LIFT
+                }
+              }]
+            } as any);
+            const es = hoverEdgeSource();
+            if (es) {
+              es.setData({
+                type: "FeatureCollection",
+                features: [{
+                  type: "Feature",
+                  geometry: edgeGeom,
+                  properties: {
+                    min_height: baseMin + HOVER_BASE_LIFT,
+                    height: baseHeight + HOVER_BASE_LIFT
+                  }
+                }]
+              } as any);
+            }
+          }
           lastHoverId = fid;
         }
         if (!lastBuildingHover) {
@@ -771,6 +985,10 @@ export default function MapboxScene({
         if (tipRef.current) tipRef.current.style.display = "none";
         if (lastHoverId) {
           map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
+          const hs = hoverSource();
+          if (hs) hs.setData(emptyFeatureCollection as any);
+          const es = hoverEdgeSource();
+          if (es) es.setData(emptyFeatureCollection as any);
           lastHoverId = null;
         }
         if (lastBuildingHover) {
@@ -800,7 +1018,6 @@ export default function MapboxScene({
     if (filter.hoverFloor) filters.push(["==", ["get", "floor"], filter.hoverFloor]);
     try {
       map.setFilter("units-fill", filters as any);
-      map.setFilter("units-outline", filters as any);
     } catch {}
   }, [filter]);
 
