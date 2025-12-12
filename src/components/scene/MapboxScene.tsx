@@ -56,6 +56,53 @@ const BALCONY_FALLBACK: GeoJSON.FeatureCollection = {
     }
   ]
 };
+const TERRACE_FALLBACK: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: { id: "terrace-l5", floor: 5 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.039009050309353, 36.773152318939118],
+            [-4.03897702061007, 36.773148320247827],
+            [-4.038953105692699, 36.772998461420102],
+            [-4.039018761180211, 36.772991814241806],
+            [-4.039026026669926, 36.773039458900236],
+            [-4.038989825865965, 36.773043671787349],
+            [-4.039009050309353, 36.773152318939118]
+          ]
+        ]
+      }
+    },
+    {
+      type: "Feature",
+      properties: { id: "terrace-l6", floor: 6 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.038999165069861, 36.773097004915414],
+            [-4.038989825863409, 36.773043671772037],
+            [-4.039026026644835, 36.77303945894392],
+            [-4.039018760523848, 36.7729918121791],
+            [-4.039066129842723, 36.772987489192381],
+            [-4.039115268568533, 36.772969209025327],
+            [-4.039127986808273, 36.773026608367154],
+            [-4.03911723081169, 36.773026841323691],
+            [-4.03911805381011, 36.773037210251793],
+            [-4.039018569221341, 36.773047992106072],
+            [-4.03901683596164, 36.773081685828018],
+            [-4.038999506591647, 36.773082839778134],
+            [-4.038999165069861, 36.773097004915414]
+          ]
+        ]
+      }
+    }
+  ]
+};
 const HOVER_EDGE_SCALE = 0.006;
 const HOVER_FACE_SCALE = -0.003;
 const HOVER_BASE_LIFT = 0.18;
@@ -333,12 +380,12 @@ function makeExternalUnitsFeatureCollection(
   return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
 }
 
-function makeBalconyFeatureCollection(
-  balconies: GeoJSON.FeatureCollection | null,
+function makeOutdoorFeatureCollection(
+  collection: GeoJSON.FeatureCollection | null,
   unitsTransform: UnitsTransform | null,
   opts?: { useRaw?: boolean }
 ): GeoJSON.FeatureCollection {
-  if (!balconies || !Array.isArray(balconies.features)) return emptyFeatureCollection;
+  if (!collection || !Array.isArray(collection.features)) return emptyFeatureCollection;
   const closeRing = (ring: number[][]) => {
     if (!Array.isArray(ring) || !ring.length) return ring;
     const first = ring[0];
@@ -348,7 +395,7 @@ function makeBalconyFeatureCollection(
     }
     return ring;
   };
-  const features = balconies.features.map((f: any, idx: number) => {
+  const features = collection.features.map((f: any, idx: number) => {
     const copy = { ...f } as any;
     const props: BalconyProperties = { ...(copy.properties || {}) };
     const floor = Number(isFinite(props.floor as number) ? props.floor : 1);
@@ -373,7 +420,7 @@ function makeBalconyFeatureCollection(
       };
     }
     copy.geometry = geom;
-    copy.id = copy.id ?? props.id ?? `balcony-${idx}-f${floor}`;
+    copy.id = copy.id ?? props.id ?? `outdoor-${idx}-f${floor}`;
     return copy;
   });
   return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
@@ -587,6 +634,7 @@ export default function MapboxScene({
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
   const [useRawUnits, setUseRawUnits] = useState(false);
   const [balconyFeatures, setBalconyFeatures] = useState<GeoJSON.FeatureCollection | null>(BALCONY_FALLBACK);
+  const [terraceFeatures, setTerraceFeatures] = useState<GeoJSON.FeatureCollection | null>(TERRACE_FALLBACK);
 
   // fallback UV units for demo/testing
   useEffect(() => {
@@ -610,17 +658,32 @@ export default function MapboxScene({
         setExternalUnits(floorsFC);
         setUseRawUnits(true);
         try {
-          const balconRes = await fetch("/plans/geojson/balcon.geojson", { cache: "no-store" });
-          if (balconRes.ok) {
-            const balconJson = await balconRes.json();
+          const [balconRes, terraceRes] = await Promise.allSettled([
+            fetch("/plans/geojson/balcon.geojson", { cache: "no-store" }),
+            fetch("/plans/geojson/terraces.geojson", { cache: "no-store" })
+          ]);
+          if (balconRes.status === "fulfilled" && balconRes.value.ok) {
+            const balconJson = await balconRes.value.json();
             if (mounted && balconJson?.type === "FeatureCollection") {
               try { console.info("MapboxScene: loaded balcon.geojson with", balconJson.features?.length ?? 0, "features"); } catch {}
               setBalconyFeatures(balconJson as GeoJSON.FeatureCollection);
-              return;
             }
+          } else {
+            setBalconyFeatures(BALCONY_FALLBACK);
           }
-        } catch {}
-        setBalconyFeatures(BALCONY_FALLBACK);
+          if (terraceRes.status === "fulfilled" && terraceRes.value.ok) {
+            const terraceJson = await terraceRes.value.json();
+            if (mounted && terraceJson?.type === "FeatureCollection") {
+              try { console.info("MapboxScene: loaded terraces.geojson with", terraceJson.features?.length ?? 0, "features"); } catch {}
+              setTerraceFeatures(terraceJson as GeoJSON.FeatureCollection);
+            }
+          } else {
+            setTerraceFeatures(TERRACE_FALLBACK);
+          }
+        } catch {
+          setBalconyFeatures(BALCONY_FALLBACK);
+          setTerraceFeatures(TERRACE_FALLBACK);
+        }
         return;
       }
       try {
@@ -635,17 +698,32 @@ export default function MapboxScene({
         // ignore
       }
       try {
-        const balconRes = await fetch("/plans/geojson/balcon.geojson", { cache: "no-store" });
-        if (balconRes.ok) {
-          const balconJson = await balconRes.json();
+        const [balconRes, terraceRes] = await Promise.allSettled([
+          fetch("/plans/geojson/balcon.geojson", { cache: "no-store" }),
+          fetch("/plans/geojson/terraces.geojson", { cache: "no-store" })
+        ]);
+        if (balconRes.status === "fulfilled" && balconRes.value.ok) {
+          const balconJson = await balconRes.value.json();
           if (mounted && balconJson?.type === "FeatureCollection") {
             try { console.info("MapboxScene: loaded balcon.geojson with", balconJson.features?.length ?? 0, "features"); } catch {}
             setBalconyFeatures(balconJson as GeoJSON.FeatureCollection);
-            return;
           }
+        } else {
+          setBalconyFeatures(BALCONY_FALLBACK);
         }
-      } catch {}
-      setBalconyFeatures(BALCONY_FALLBACK);
+        if (terraceRes.status === "fulfilled" && terraceRes.value.ok) {
+          const terraceJson = await terraceRes.value.json();
+          if (mounted && terraceJson?.type === "FeatureCollection") {
+            try { console.info("MapboxScene: loaded terraces.geojson with", terraceJson.features?.length ?? 0, "features"); } catch {}
+            setTerraceFeatures(terraceJson as GeoJSON.FeatureCollection);
+          }
+        } else {
+          setTerraceFeatures(TERRACE_FALLBACK);
+        }
+      } catch {
+        setBalconyFeatures(BALCONY_FALLBACK);
+        setTerraceFeatures(TERRACE_FALLBACK);
+      }
     })();
     return () => {
       mounted = false;
@@ -744,10 +822,20 @@ export default function MapboxScene({
     if (!map) return;
     const source = map.getSource("balconies") as GeoJSONSource | undefined;
     if (!source) return;
-    const data = makeBalconyFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits });
+    const data = makeOutdoorFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits });
     try { console.info("MapboxScene: updating balcony source", { features: data.features?.length ?? 0 }); } catch {}
     source.setData(data as any);
   }, [balconyFeatures, unitsTransform, useRawUnits, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource("terraces") as GeoJSONSource | undefined;
+    if (!source) return;
+    const data = makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits });
+    try { console.info("MapboxScene: updating terrace source", { features: data.features?.length ?? 0 }); } catch {}
+    source.setData(data as any);
+  }, [terraceFeatures, unitsTransform, useRawUnits, ready]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
@@ -836,7 +924,11 @@ export default function MapboxScene({
           map.addSource("hover-edge", { type: "geojson", data: emptyFeatureCollection });
           map.addSource("balconies", {
             type: "geojson",
-            data: makeBalconyFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits })
+            data: makeOutdoorFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits })
+          });
+          map.addSource("terraces", {
+            type: "geojson",
+            data: makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits })
           });
           map.addLayer({
             id: "units-fill",
@@ -856,6 +948,18 @@ export default function MapboxScene({
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
               "fill-extrusion-opacity": 1,
+            }
+          });
+          map.addLayer({
+            id: "terrace-fill",
+            type: "fill-extrusion",
+            source: "terraces",
+            paint: {
+              "fill-extrusion-color": "#fef4e7",
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0.93,
+              "fill-extrusion-vertical-gradient": false
             }
           });
           map.addLayer({
