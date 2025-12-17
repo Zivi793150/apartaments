@@ -509,12 +509,25 @@ function makeOutdoorFeatureCollection(
       const shortAxis = axisBasis ? axisBasis.axes[1] : null;
       const extraShortInset = postSize * 0.75;
       const cornerPoints = filterCornerPoints(ringVertices);
-      cornerPoints.forEach((pt, cornerIdx) => {
+      let outerSign: number | null = null;
+      if (shortAxis && postCenter) {
+        let maxProj = 0;
+        ringVertices.forEach((pt) => {
+          const rel: [number, number] = [pt[0] - postCenter[0], pt[1] - postCenter[1]];
+          const proj = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+          if (Math.abs(proj) > Math.abs(maxProj)) {
+            maxProj = proj;
+          }
+        });
+        outerSign = maxProj === 0 ? null : Math.sign(maxProj);
+      }
+
+      const placePost = (pt: [number, number], suffix: string) => {
         let insetPoint = postCenter ? movePointTowards(pt, postCenter, postInset) : pt;
         if (shortAxis && postCenter) {
           const vecToCenter: [number, number] = [insetPoint[0] - postCenter[0], insetPoint[1] - postCenter[1]];
           const alongShort = vecToCenter[0] * shortAxis[0] + vecToCenter[1] * shortAxis[1];
-          const newAlongShort = Math.sign(alongShort) * Math.max(Math.abs(alongShort) - extraShortInset, 0);
+          const newAlongShort = Math.sign(alongShort || 1) * Math.max(Math.abs(alongShort) - extraShortInset, 0);
           const delta = newAlongShort - alongShort;
           insetPoint = [
             insetPoint[0] + shortAxis[0] * delta,
@@ -533,9 +546,42 @@ function makeOutdoorFeatureCollection(
             kind: "balcony-post" as OutdoorKind,
           },
           geometry: { type: "Polygon", coordinates: [postPolygon] },
-          id: `${idBase}-post-${cornerIdx}`,
+          id: `${idBase}-post-${suffix}`,
         } as GeoJSON.Feature);
+      };
+
+      cornerPoints.forEach((pt, cornerIdx) => {
+        placePost(pt, `corner-${cornerIdx}`);
       });
+
+      if (shortAxis && postCenter) {
+        const front: [number, number][] = [];
+        const back: [number, number][] = [];
+        cornerPoints.forEach((pt) => {
+          const rel: [number, number] = [pt[0] - postCenter[0], pt[1] - postCenter[1]];
+          const projShort = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+          if (projShort >= 0) front.push(pt);
+          else back.push(pt);
+        });
+
+        const targetSign = outerSign ?? (front.length >= back.length ? 1 : -1);
+        const makeMidpoint = (points: [number, number][]) => {
+          if (points.length < 2) return null;
+          const sum = points.reduce<[number, number]>(
+            (acc, p) => [acc[0] + p[0], acc[1] + p[1]],
+            [0, 0]
+          );
+          return [sum[0] / points.length, sum[1] / points.length] as [number, number];
+        };
+
+        const frontMid = makeMidpoint(front);
+        const backMid = makeMidpoint(back);
+        if (targetSign >= 0 && frontMid) {
+          placePost(frontMid, "mid-front");
+        } else if (targetSign < 0 && backMid) {
+          placePost(backMid, "mid-back");
+        }
+      }
     }
   });
   return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
