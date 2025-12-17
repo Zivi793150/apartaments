@@ -19,6 +19,9 @@ const FLOOR_SCALE_OVERRIDES: Record<number, number> = {
   6: 0.035,
 };
 const emptyFeatureCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+const TERRACE_FLOOR_THICKNESS = 0.12;
+const TERRACE_RAIL_HEIGHT = FLOOR_HEIGHT_M / 3;
+const TERRACE_RAIL_SCALE = -0.07;
 const BALCONY_FALLBACK: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: [
@@ -113,6 +116,7 @@ type BalconyProperties = {
   base?: number;
   height?: number;
   id?: string | number;
+  type?: string;
 };
 
 type AxisBasis = {
@@ -380,10 +384,12 @@ function makeExternalUnitsFeatureCollection(
   return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
 }
 
+type OutdoorKind = "balcony" | "terrace-floor" | "terrace-rail";
+
 function makeOutdoorFeatureCollection(
   collection: GeoJSON.FeatureCollection | null,
   unitsTransform: UnitsTransform | null,
-  opts?: { useRaw?: boolean }
+  opts?: { useRaw?: boolean; mode?: "balcony" | "terrace" }
 ): GeoJSON.FeatureCollection {
   if (!collection || !Array.isArray(collection.features)) return emptyFeatureCollection;
   const closeRing = (ring: number[][]) => {
@@ -395,13 +401,14 @@ function makeOutdoorFeatureCollection(
     }
     return ring;
   };
-  const features = collection.features.map((f: any, idx: number) => {
+  const features: GeoJSON.Feature[] = [];
+
+  collection.features.forEach((f: any, idx: number) => {
     const copy = { ...f } as any;
     const props: BalconyProperties = { ...(copy.properties || {}) };
     const floor = Number(isFinite(props.floor as number) ? props.floor : 1);
-    const min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
-    const height = floor * FLOOR_HEIGHT_M - 0.02;
-    copy.properties = { ...props, floor, min_height, height };
+    const baseMin = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+    const baseMax = floor * FLOOR_HEIGHT_M - 0.02;
     let geom = copy.geometry;
     if (!(opts?.useRaw) && unitsTransform) {
       geom = transformGeometry(geom, unitsTransform);
@@ -419,9 +426,48 @@ function makeOutdoorFeatureCollection(
         ),
       };
     }
-    copy.geometry = geom;
-    copy.id = copy.id ?? props.id ?? `outdoor-${idx}-f${floor}`;
-    return copy;
+    const idBase = copy.id ?? props.id ?? `outdoor-${idx}-f${floor}`;
+    const isTerrace = (props.type ?? "").toString().toLowerCase() === "terrace" || opts?.mode === "terrace";
+    if (!isTerrace) {
+      features.push({
+        type: "Feature",
+        properties: { ...props, floor, min_height: baseMin, height: baseMax, kind: "balcony" as OutdoorKind },
+        geometry: geom,
+        id: idBase,
+      } as GeoJSON.Feature);
+      return;
+    }
+    // Terrace floor slab
+    const floorFeature = {
+      type: "Feature",
+      properties: {
+        ...props,
+        floor,
+        min_height: baseMin,
+        height: baseMin + TERRACE_FLOOR_THICKNESS,
+        kind: "terrace-floor" as OutdoorKind,
+      },
+      geometry: geom,
+      id: `${idBase}-floor`,
+    } as GeoJSON.Feature;
+    features.push(floorFeature);
+    // Terrace rail (hollow)
+    const railGeom = createRailGeometry(geom, TERRACE_RAIL_SCALE);
+    if (railGeom) {
+      const railFeature = {
+        type: "Feature",
+        properties: {
+          ...props,
+          floor,
+          min_height: baseMin + TERRACE_FLOOR_THICKNESS,
+          height: Math.min(baseMin + TERRACE_FLOOR_THICKNESS + TERRACE_RAIL_HEIGHT, baseMax),
+          kind: "terrace-rail" as OutdoorKind,
+        },
+        geometry: railGeom,
+        id: `${idBase}-rail`,
+      } as GeoJSON.Feature;
+      features.push(railFeature);
+    }
   });
   return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
 }
@@ -822,7 +868,7 @@ export default function MapboxScene({
     if (!map) return;
     const source = map.getSource("balconies") as GeoJSONSource | undefined;
     if (!source) return;
-    const data = makeOutdoorFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits });
+    const data = makeOutdoorFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits, mode: "balcony" });
     try { console.info("MapboxScene: updating balcony source", { features: data.features?.length ?? 0 }); } catch {}
     source.setData(data as any);
   }, [balconyFeatures, unitsTransform, useRawUnits, ready]);
@@ -832,7 +878,7 @@ export default function MapboxScene({
     if (!map) return;
     const source = map.getSource("terraces") as GeoJSONSource | undefined;
     if (!source) return;
-    const data = makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits });
+    const data = makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits, mode: "terrace" });
     try { console.info("MapboxScene: updating terrace source", { features: data.features?.length ?? 0 }); } catch {}
     source.setData(data as any);
   }, [terraceFeatures, unitsTransform, useRawUnits, ready]);
@@ -924,11 +970,11 @@ export default function MapboxScene({
           map.addSource("hover-edge", { type: "geojson", data: emptyFeatureCollection });
           map.addSource("balconies", {
             type: "geojson",
-            data: makeOutdoorFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits })
+            data: makeOutdoorFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits, mode: "balcony" })
           });
           map.addSource("terraces", {
             type: "geojson",
-            data: makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits })
+            data: makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits, mode: "terrace" })
           });
           map.addLayer({
             id: "units-fill",
@@ -951,14 +997,34 @@ export default function MapboxScene({
             }
           });
           map.addLayer({
-            id: "terrace-fill",
+            id: "terrace-floor-fill",
             type: "fill-extrusion",
             source: "terraces",
+            filter: ["==", ["get", "kind"], "terrace-floor"],
             paint: {
-              "fill-extrusion-color": "#fef4e7",
+              "fill-extrusion-color": "#f2e4d4",
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.93,
+              "fill-extrusion-opacity": 0.96,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
+          map.addLayer({
+            id: "terrace-rail-fill",
+            type: "fill-extrusion",
+            source: "terraces",
+            filter: ["==", ["get", "kind"], "terrace-rail"],
+            paint: {
+              "fill-extrusion-color": [
+                "interpolate",
+                ["linear"],
+                ["get", "floor"],
+                4, "#ede4da",
+                6, "#f9f3ec"
+              ],
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0.94,
               "fill-extrusion-vertical-gradient": false
             }
           });
@@ -1148,6 +1214,50 @@ function scalePolygon(pts: [number, number][], factor: number) {
   return pts.map(p => {
     return [cx + (p[0] - cx) * (1 + factor), cy + (p[1] - cy) * (1 + factor)] as [number, number];
   });
+}
+
+function ensureClosedRing(ring: [number, number][]): [number, number][] {
+  if (!ring.length) return ring;
+  const closed = [...ring];
+  const first = closed[0];
+  const last = closed[closed.length - 1];
+  if (last[0] !== first[0] || last[1] !== first[1]) {
+    closed.push([first[0], first[1]]);
+  }
+  return closed;
+}
+
+function createRailGeometry(geometry: any, insetScale: number): GeoJSON.MultiPolygon | null {
+  if (!geometry || !Number.isFinite(insetScale)) return null;
+  const buildStrips = (rings: number[][][]): number[][][][] => {
+    if (!Array.isArray(rings) || !rings.length) return [];
+    const normalizedOuter = normalizeRing(rings[0]);
+    if (!normalizedOuter || normalizedOuter.length < 4) return [];
+    const outer = normalizedOuter.slice(0, normalizedOuter.length - 1);
+    const inner = scalePolygon(outer, insetScale);
+    if (!inner.length || inner.length !== outer.length) return [];
+    const strips: number[][][][] = [];
+    for (let i = 0; i < outer.length; i++) {
+      const next = (i + 1) % outer.length;
+      const poly = ensureClosedRing([
+        outer[i] as [number, number],
+        outer[next] as [number, number],
+        inner[next] as [number, number],
+        inner[i] as [number, number],
+      ]);
+      strips.push([poly]);
+    }
+    return strips;
+  };
+  if (geometry.type === "Polygon") {
+    const strips = buildStrips(geometry.coordinates as number[][][]);
+    return strips.length ? { type: "MultiPolygon", coordinates: strips } : null;
+  }
+  if (geometry.type === "MultiPolygon") {
+    const strips = (geometry.coordinates as number[][][][]).flatMap((poly) => buildStrips(poly));
+    return strips.length ? { type: "MultiPolygon", coordinates: strips } : null;
+  }
+  return null;
 }
 
 function makeFacadeFeatureCollection(quad: [number, number][], floors: number) {
