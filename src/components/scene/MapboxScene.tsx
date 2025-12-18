@@ -19,6 +19,9 @@ const FLOOR_SCALE_OVERRIDES: Record<number, number> = {
   6: 0.035,
 };
 const emptyFeatureCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+const BUILDING_BASE_COLOR = "#ece3db";
+const TERRACE_GLASS_COLOR = "#d9e5f1";
+const TERRACE_GLASS_OPACITY = 0.55;
 const TERRACE_FLOOR_THICKNESS = 0.12;
 const TERRACE_RAIL_HEIGHT = FLOOR_HEIGHT_M / 3;
 const TERRACE_RAIL_SCALE = -0.06;
@@ -1098,17 +1101,17 @@ export default function MapboxScene({
             paint: {
               "fill-extrusion-color": [
                 "case",
-                  ["boolean", ["feature-state", "hover"], false], "#ffd9a1",
+                  ["boolean", ["feature-state", "hover"], false], "#fff7ef",
                   ["match", ["get", "status"],
-                    "sold", "#d7c3a3",
-                    "reserved", "#ffda9e",
-                    "available", "#f4c689",
-                    "#f4c689"
+                    "sold", "#dfd1c4",
+                    "reserved", "#f1e3d6",
+                    "available", BUILDING_BASE_COLOR,
+                    BUILDING_BASE_COLOR
                   ]
               ],
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 1,
+              "fill-extrusion-opacity": 0.98,
             }
           });
           map.addLayer({
@@ -1117,7 +1120,7 @@ export default function MapboxScene({
             source: "terraces",
             filter: ["==", ["get", "kind"], "terrace-floor"],
             paint: {
-              "fill-extrusion-color": "#ffffff",
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
               "fill-extrusion-opacity": 0.98,
@@ -1130,10 +1133,16 @@ export default function MapboxScene({
             source: "terraces",
             filter: ["==", ["get", "kind"], "terrace-rail"],
             paint: {
-              "fill-extrusion-color": "#ffffff",
+              "fill-extrusion-color": [
+                "interpolate",
+                ["linear"],
+                ["get", "floor"],
+                4, TERRACE_GLASS_COLOR,
+                6, "#eff4f9"
+              ],
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.96,
+              "fill-extrusion-opacity": TERRACE_GLASS_OPACITY,
               "fill-extrusion-vertical-gradient": false
             }
           });
@@ -1183,7 +1192,7 @@ export default function MapboxScene({
             source: "balconies",
             filter: ["==", ["get", "kind"], "balcony-floor"],
             paint: {
-              "fill-extrusion-color": "#ffffff",
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
               "fill-extrusion-opacity": 0.96,
@@ -1196,7 +1205,7 @@ export default function MapboxScene({
             source: "balconies",
             filter: ["==", ["get", "kind"], "balcony-rail"],
             paint: {
-              "fill-extrusion-color": "#ffffff",
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
               "fill-extrusion-opacity": 0.94,
@@ -1209,7 +1218,7 @@ export default function MapboxScene({
             source: "balconies",
             filter: ["==", ["get", "kind"], "balcony-post"],
             paint: {
-              "fill-extrusion-color": "#ffffff",
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
               "fill-extrusion-opacity": 1,
