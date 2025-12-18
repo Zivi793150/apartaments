@@ -22,6 +22,8 @@ const emptyFeatureCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollec
 const BUILDING_BASE_COLOR = "#ece3db";
 const TERRACE_GLASS_COLOR = "#d9e5f1";
 const TERRACE_GLASS_OPACITY = 0.55;
+const BALCONY_GLASS_COLOR = "#dfe9f4";
+const BALCONY_GLASS_OPACITY = 0.65;
 const TERRACE_FLOOR_THICKNESS = 0.12;
 const TERRACE_RAIL_HEIGHT = FLOOR_HEIGHT_M / 3;
 const TERRACE_RAIL_SCALE = -0.06;
@@ -469,6 +471,15 @@ function makeOutdoorFeatureCollection(
       }
       return;
     }
+    const primaryRing = getPrimaryRing(geom);
+    const postRing = primaryRing ? ensureClosedRing(primaryRing) : null;
+    const ringVertices = postRing ? postRing.slice(0, postRing.length - 1) : null;
+    const ringCenter = ringVertices?.length ? centroidOfPolygon(ringVertices) : null;
+    const axisBasis = ringVertices?.length ? computeAxisBasis(ringVertices) : null;
+    const shortAxis = axisBasis ? axisBasis.axes[1] : null;
+    const outerSign = ringVertices && ringCenter && shortAxis
+      ? determineOuterSign(ringVertices, ringCenter, shortAxis)
+      : null;
     // Balcony floor slab
     const balconyFloor = {
       type: "Feature",
@@ -484,7 +495,11 @@ function makeOutdoorFeatureCollection(
     } as GeoJSON.Feature;
     features.push(balconyFloor);
     // Balcony rail
-    const balconyRailGeom = createRailGeometry(geom, BALCONY_RAIL_SCALE);
+    let balconyRailGeom = createRailGeometry(geom, BALCONY_RAIL_SCALE);
+    if (balconyRailGeom && ringCenter && shortAxis && outerSign) {
+      const filtered = filterRailGeometryToOuter(balconyRailGeom, ringCenter, shortAxis, outerSign);
+      if (filtered) balconyRailGeom = filtered;
+    }
     if (balconyRailGeom) {
       const balconyRail = {
         type: "Feature",
@@ -501,29 +516,12 @@ function makeOutdoorFeatureCollection(
       features.push(balconyRail);
     }
     // Balcony posts at key corners
-    const primaryRing = getPrimaryRing(geom);
-    const postRing = primaryRing ? ensureClosedRing(primaryRing) : null;
-    const ringVertices = postRing ? postRing.slice(0, postRing.length - 1) : null;
     if (ringVertices && ringVertices.length) {
       const postSize = estimatePostSize(ringVertices);
       const postInset = postSize * 1.35;
-      const postCenter = centroidOfPolygon(ringVertices);
-      const axisBasis = computeAxisBasis(ringVertices);
-      const shortAxis = axisBasis ? axisBasis.axes[1] : null;
+      const postCenter = ringCenter;
       const extraShortInset = postSize * 0.75;
       const cornerPoints = filterCornerPoints(ringVertices);
-      let outerSign: number | null = null;
-      if (shortAxis && postCenter) {
-        let maxProj = 0;
-        ringVertices.forEach((pt) => {
-          const rel: [number, number] = [pt[0] - postCenter[0], pt[1] - postCenter[1]];
-          const proj = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
-          if (Math.abs(proj) > Math.abs(maxProj)) {
-            maxProj = proj;
-          }
-        });
-        outerSign = maxProj === 0 ? null : Math.sign(maxProj);
-      }
 
       const placePost = (pt: [number, number], suffix: string) => {
         let insetPoint = postCenter ? movePointTowards(pt, postCenter, postInset) : pt;
@@ -1205,10 +1203,16 @@ export default function MapboxScene({
             source: "balconies",
             filter: ["==", ["get", "kind"], "balcony-rail"],
             paint: {
-              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-color": [
+                "interpolate",
+                ["linear"],
+                ["get", "floor"],
+                2, BALCONY_GLASS_COLOR,
+                4, "#eff5fb"
+              ],
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.94,
+              "fill-extrusion-opacity": BALCONY_GLASS_OPACITY,
               "fill-extrusion-vertical-gradient": false
             }
           });
@@ -1403,6 +1407,40 @@ function createRailGeometry(geometry: any, insetScale: number): GeoJSON.MultiPol
     return strips.length ? { type: "MultiPolygon", coordinates: strips } : null;
   }
   return null;
+}
+
+function filterRailGeometryToOuter(
+  geometry: GeoJSON.MultiPolygon,
+  center: [number, number],
+  shortAxis: [number, number],
+  outerSign: number
+): GeoJSON.MultiPolygon | null {
+  const filtered = (geometry.coordinates as number[][][][]).filter((poly) => {
+    const ring = poly[0];
+    if (!ring?.length) return false;
+    const rel = [ring[0][0] - center[0], ring[0][1] - center[1]];
+    const proj = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+    return Math.sign(proj || outerSign) === outerSign;
+  });
+  return filtered.length ? { type: "MultiPolygon", coordinates: filtered } : null;
+}
+
+function determineOuterSign(
+  points: [number, number][],
+  center: [number, number],
+  shortAxis: [number, number]
+): number | null {
+  if (!points.length) return null;
+  let maxProj = 0;
+  points.forEach((pt) => {
+    const rel: [number, number] = [pt[0] - center[0], pt[1] - center[1]];
+    const proj = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+    if (Math.abs(proj) > Math.abs(maxProj)) {
+      maxProj = proj;
+    }
+  });
+  if (maxProj === 0) return null;
+  return Math.sign(maxProj);
 }
 
 function getPrimaryRing(geometry: any): [number, number][] | null {
