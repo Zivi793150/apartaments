@@ -24,6 +24,9 @@ const TERRACE_GLASS_COLOR = "#d9e5f1";
 const TERRACE_GLASS_OPACITY = 0.55;
 const BALCONY_GLASS_COLOR = "#dfe9f4";
 const BALCONY_GLASS_OPACITY = 0.65;
+const FACADE_GLASS_COLOR = "#c6d8eb";
+const FACADE_GLASS_OPACITY = 0.78;
+const STREET_WALL_STRIP_SCALE = -0.02;
 const TERRACE_FLOOR_THICKNESS = 0.12;
 const TERRACE_RAIL_HEIGHT = FLOOR_HEIGHT_M / 3;
 const TERRACE_RAIL_SCALE = -0.06;
@@ -32,6 +35,19 @@ const BALCONY_RAIL_HEIGHT = FLOOR_HEIGHT_M * 0.48;
 const BALCONY_RAIL_SCALE = -0.03;
 const BALCONY_POST_SIZE_FACTOR = 0.0025;
 const BALCONY_POST_MIN_SIZE = 0.000002;
+const STREET_BEAM_SIZE_FACTOR = 0.042;
+const STREET_BEAM_MIN_SIZE = 0.0000025;
+const STREET_TOP_BEAM_HEIGHT = 0.22;
+const STREET_TOP_BEAM_THICKNESS_FACTOR = 1.35;
+const STREET_CROSS_DEPTH_FACTOR = 0.35;
+const STREET_CROSS_WIDTH_FACTOR = 0.22;
+const STREET_CROSS_WINDOW_INSET_FACTOR = 0.05;
+const STREET_CROSS_DEPTH_CLEARANCE_FACTOR = 0.35;
+
+const STREET_CROSS_HALF_HEIGHT = 0.08;
+
+const STREET_GLASS_TARGET_FLOORS = [4, 3];
+
 const BALCONY_FALLBACK: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: [
@@ -392,6 +408,487 @@ function makeExternalUnitsFeatureCollection(
   });
   try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
   return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
+}
+
+function makeStreetGlassFeatureCollection(
+  unitsFc: GeoJSON.FeatureCollection | null,
+  terraceFc: GeoJSON.FeatureCollection | null
+): GeoJSON.FeatureCollection {
+  if (!unitsFc) return emptyFeatureCollection;
+  const features: GeoJSON.Feature[] = [];
+  let fallbackDir: [number, number] | null = null;
+
+  STREET_GLASS_TARGET_FLOORS.forEach((floor) => {
+    const floorUnits = unitsFc.features.filter((feature) => {
+      const props = feature.properties as any;
+      return Number(props?.floor) === floor;
+    });
+    if (!floorUnits.length) return;
+    const refFeature = floorUnits[0] as GeoJSON.Feature;
+    const baseMin = Number(
+      (refFeature.properties as any)?.min_height ?? (floor - 1) * FLOOR_HEIGHT_M + 0.02
+    );
+    const baseMax = Number((refFeature.properties as any)?.height ?? floor * FLOOR_HEIGHT_M - 0.02);
+    const primaryRing = getPrimaryRing(refFeature.geometry);
+    if (!primaryRing) return;
+    const closedRing = ensureClosedRing(primaryRing);
+    const ringPoints = closedRing.slice(0, -1);
+    if (!ringPoints.length) return;
+    const floorCenter = centroidOfPolygon(ringPoints);
+
+    let dirVec: [number, number] | null = null;
+    const terraceFeature = terraceFc?.features.find((feature) => {
+      const props = feature.properties as any;
+      return props?.kind === "terrace-floor" && Number(props?.floor) === floor;
+    });
+    if (terraceFeature) {
+      const terracePoints = collectGeometryPoints(terraceFeature.geometry);
+      if (terracePoints.length) {
+        const terraceCenter = centroidOfPolygon(terracePoints);
+        const dirVecRaw: [number, number] = [
+          terraceCenter[0] - floorCenter[0],
+          terraceCenter[1] - floorCenter[1],
+        ];
+        const dirLen = Math.hypot(dirVecRaw[0], dirVecRaw[1]);
+        if (dirLen > 0) {
+          dirVec = [dirVecRaw[0] / dirLen, dirVecRaw[1] / dirLen];
+          fallbackDir = dirVec;
+        }
+      }
+    } else if (fallbackDir) {
+      dirVec = fallbackDir;
+    }
+    if (!dirVec) return;
+
+    const sideAxis: [number, number] = [-dirVec[1], dirVec[0]];
+    const dirAxis: [number, number] = [dirVec[0], dirVec[1]];
+    const normalize = (vec: [number, number]) => {
+      const len = Math.hypot(vec[0], vec[1]) || 1;
+      return [vec[0] / len, vec[1] / len] as [number, number];
+    };
+    const secondaryAxis = normalize([
+      sideAxis[0] * 0.65 + dirAxis[0] * 0.35,
+      sideAxis[1] * 0.65 + dirAxis[1] * 0.35,
+    ]);
+    const pointFromSD = (s: number, d: number): [number, number] => [
+      floorCenter[0] + sideAxis[0] * s + dirVec[0] * d,
+      floorCenter[1] + sideAxis[1] * s + dirVec[1] * d,
+    ];
+
+    const rectFromSD = (
+      centerS: number,
+      centerD: number,
+      halfWidth: number,
+      halfDepth: number
+    ): number[][] | null => {
+      if (!(halfWidth > 0) || !(halfDepth > 0)) return null;
+      const ring = ensureClosedRing([
+        pointFromSD(centerS - halfWidth, centerD - halfDepth),
+        pointFromSD(centerS + halfWidth, centerD - halfDepth),
+        pointFromSD(centerS + halfWidth, centerD + halfDepth),
+        pointFromSD(centerS - halfWidth, centerD + halfDepth),
+      ]);
+      return ring && ring.length >= 4 ? ring : null;
+    };
+
+    const shellGeom = createRailGeometry(refFeature.geometry as any, STREET_WALL_STRIP_SCALE);
+    if (!shellGeom) return;
+
+    (shellGeom.coordinates || []).forEach((poly, idx) => {
+      if (!poly?.[0]) return;
+      const ring = poly[0];
+      if (!Array.isArray(ring) || ring.length < 4) return;
+      const withoutClose = ring.slice(0, -1).map((pt: number[]) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+      if (!withoutClose.length) return;
+      const centroid = centroidOfPolygon(withoutClose);
+      const rel: [number, number] = [centroid[0] - floorCenter[0], centroid[1] - floorCenter[1]];
+      const relLen = Math.hypot(rel[0], rel[1]) || 1;
+      const dot = rel[0] * dirVec[0] + rel[1] * dirVec[1];
+      const cosTheta = dot / relLen;
+      if (cosTheta < 0.92) return;
+      const glassFeature: GeoJSON.Feature = {
+        type: "Feature",
+        id: `street-glass-${floor}-${idx}`,
+        properties: {
+          floor,
+          min_height: baseMin,
+          height: baseMax,
+          kind: "street-glass",
+        },
+        geometry: { type: "Polygon", coordinates: [ring] },
+      };
+      features.push(glassFeature);
+
+      const recordExtreme = (
+        pts: [number, number][],
+        projFunc: (pt: [number, number]) => number
+      ) => {
+        let minProj = Number.POSITIVE_INFINITY;
+        let maxProj = Number.NEGATIVE_INFINITY;
+        let minPoints: [number, number][] = [];
+        let maxPoints: [number, number][] = [];
+        const EPS = 1e-8;
+        pts.forEach((pt) => {
+          const proj = projFunc(pt);
+          if (proj < minProj - EPS) {
+            minProj = proj;
+            minPoints = [pt];
+          } else if (Math.abs(proj - minProj) <= EPS) {
+            minPoints.push(pt);
+          }
+          if (proj > maxProj + EPS) {
+            maxProj = proj;
+            maxPoints = [pt];
+          } else if (Math.abs(proj - maxProj) <= EPS) {
+            maxPoints.push(pt);
+          }
+        });
+        return { minPoints, maxPoints, minProj, maxProj };
+      };
+
+      const sideExtremes = recordExtreme(withoutClose, (pt) => {
+        const relPt: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+        return relPt[0] * sideAxis[0] + relPt[1] * sideAxis[1];
+      });
+      const dirExtremes = recordExtreme(withoutClose, (pt) => {
+        const relPt: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+        return relPt[0] * dirVec[0] + relPt[1] * dirVec[1];
+      });
+
+      const avgPoint = (pts: [number, number][]) => {
+        if (!pts.length) return null;
+        const sum = pts.reduce<[number, number]>(
+          (acc, p) => [acc[0] + p[0], acc[1] + p[1]],
+          [0, 0]
+        );
+        return [sum[0] / pts.length, sum[1] / pts.length] as [number, number];
+      };
+
+      const spanBounds = withoutClose.reduce(
+        (acc, [x, y]) => ({
+          minX: Math.min(acc.minX, x),
+          maxX: Math.max(acc.maxX, x),
+          minY: Math.min(acc.minY, y),
+          maxY: Math.max(acc.maxY, y),
+        }),
+        {
+          minX: Number.POSITIVE_INFINITY,
+          maxX: Number.NEGATIVE_INFINITY,
+          minY: Number.POSITIVE_INFINITY,
+          maxY: Number.NEGATIVE_INFINITY,
+        }
+      );
+      const span =
+        Math.max(spanBounds.maxX - spanBounds.minX, spanBounds.maxY - spanBounds.minY) || 0.00001;
+      const beamSize = Math.max(span * STREET_BEAM_SIZE_FACTOR, STREET_BEAM_MIN_SIZE);
+      const beamInset = Math.min(span * 0.02, beamSize * 2);
+
+      const beamContactPoints: [number, number][] = [];
+      const beamCenters: { center: [number, number]; side: number }[] = [];
+      const addBeamAt = (center: [number, number], suffix: string) => {
+        const beamPoly = createPostPolygon(center, beamSize);
+        if (!beamPoly || beamPoly.length < 4) return;
+        const relToCenter: [number, number] = [center[0] - floorCenter[0], center[1] - floorCenter[1]];
+        const sideCoord = relToCenter[0] * sideAxis[0] + relToCenter[1] * sideAxis[1];
+        const sideSign = sideCoord >= 0 ? 1 : -1;
+        features.push({
+          type: "Feature",
+          id: `street-glass-beam-${floor}-${idx}-${suffix}`,
+          properties: {
+            floor,
+            min_height: baseMin,
+            height: baseMax,
+            kind: "street-glass-beam",
+          },
+          geometry: { type: "Polygon", coordinates: [beamPoly] },
+        } as GeoJSON.Feature);
+        const relPoints = beamPoly.map((pt) => {
+          const rel: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+          return {
+            point: pt as [number, number],
+            side: rel[0] * sideAxis[0] + rel[1] * sideAxis[1],
+            dir: rel[0] * dirVec[0] + rel[1] * dirVec[1],
+          };
+        });
+        const maxDir = Math.max(...relPoints.map((p) => p.dir));
+        const frontCandidates = relPoints.filter((p) => Math.abs(p.dir - maxDir) < 1e-9);
+        const chosen = frontCandidates.reduce<typeof relPoints[0] | null>((acc, cur) => {
+          if (!acc) return cur;
+          if (sideSign >= 0) {
+            return cur.side > acc.side ? cur : acc;
+          }
+          return cur.side < acc.side ? cur : acc;
+        }, null);
+        if (chosen) beamContactPoints.push(chosen.point);
+        beamCenters.push({ center, side: sideCoord });
+      };
+
+      const basePositions = [avgPoint(sideExtremes.minPoints), avgPoint(sideExtremes.maxPoints)].filter(
+        (pt): pt is [number, number] => Array.isArray(pt)
+      );
+      basePositions.forEach((pos, beamIdx) => {
+        if (!pos) return;
+        const relToCenter: [number, number] = [pos[0] - floorCenter[0], pos[1] - floorCenter[1]];
+        const sideSign = (relToCenter[0] * sideAxis[0] + relToCenter[1] * sideAxis[1]) >= 0 ? 1 : -1;
+        let insetPos = pos;
+        if (beamInset > 0) {
+          insetPos = [
+            pos[0] - sideAxis[0] * sideSign * beamInset,
+            pos[1] - sideAxis[1] * sideSign * beamInset,
+          ];
+        }
+        addBeamAt(insetPos, `corner-${beamIdx}`);
+      });
+
+      const makeOrderedCenters = () => [...beamCenters].sort((a, b) => a.side - b.side);
+
+      if (beamCenters.length >= 2) {
+        const orderedCenters = makeOrderedCenters();
+        const leftCenter = orderedCenters[0].center;
+        const rightCenter = orderedCenters[orderedCenters.length - 1].center;
+        const delta: [number, number] = [rightCenter[0] - leftCenter[0], rightCenter[1] - leftCenter[1]];
+        [1 / 3, 2 / 3].forEach((frac, fracIdx) => {
+          const newCenter: [number, number] = [
+            leftCenter[0] + delta[0] * frac,
+            leftCenter[1] + delta[1] * frac,
+          ];
+          addBeamAt(newCenter, `inner-${fracIdx}`);
+        });
+      }
+
+      const shiftInward = (pt: [number, number], dist: number): [number, number] => [
+        pt[0] - dirVec[0] * dist,
+        pt[1] - dirVec[1] * dist,
+      ];
+
+      const topThickness = beamSize * STREET_TOP_BEAM_THICKNESS_FACTOR;
+      const finalOrderedCenters = beamCenters.length >= 2 ? makeOrderedCenters() : [];
+
+      const makePerpAxis = (primary: [number, number], reference: [number, number]): [number, number] => {
+        const dot = primary[0] * reference[0] + primary[1] * reference[1];
+        const residual: [number, number] = [reference[0] - primary[0] * dot, reference[1] - primary[1] * dot];
+        const len = Math.hypot(residual[0], residual[1]);
+        if (len > 1e-6) return [residual[0] / len, residual[1] / len];
+        return [-primary[1], primary[0]];
+      };
+
+      const spanBasis =
+        finalOrderedCenters.length >= 2
+          ? (() => {
+              const fullSpanVec: [number, number] = [
+                finalOrderedCenters[finalOrderedCenters.length - 1].center[0] - finalOrderedCenters[0].center[0],
+                finalOrderedCenters[finalOrderedCenters.length - 1].center[1] - finalOrderedCenters[0].center[1],
+              ];
+              const spanLen = Math.hypot(fullSpanVec[0], fullSpanVec[1]) || 1;
+              const basisSide: [number, number] = [fullSpanVec[0] / spanLen, fullSpanVec[1] / spanLen];
+              let basisDepth = makePerpAxis(basisSide, dirVec);
+              if (basisDepth[0] * dirVec[0] + basisDepth[1] * dirVec[1] < 0) {
+                basisDepth = [-basisDepth[0], -basisDepth[1]];
+              }
+              const projectAlong = (pt: [number, number], axis: [number, number]) => {
+                const rel: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+                return rel[0] * axis[0] + rel[1] * axis[1];
+              };
+              const pointFromBasis = (s: number, d: number): [number, number] => [
+                floorCenter[0] + basisSide[0] * s + basisDepth[0] * d,
+                floorCenter[1] + basisSide[1] * s + basisDepth[1] * d,
+              ];
+              const rectFromBasis = (
+                centerS: number,
+                centerD: number,
+                halfWidth: number,
+                halfDepth: number
+              ): number[][] | null => {
+                if (!(halfWidth > 0) || !(halfDepth > 0)) return null;
+                const corners: [number, number][] = [
+                  pointFromBasis(centerS - halfWidth, centerD - halfDepth),
+                  pointFromBasis(centerS + halfWidth, centerD - halfDepth),
+                  pointFromBasis(centerS + halfWidth, centerD + halfDepth),
+                  pointFromBasis(centerS - halfWidth, centerD + halfDepth),
+                ];
+                return ensureClosedRing(corners);
+              };
+              const depthExtremes = recordExtreme(withoutClose, (pt) => projectAlong(pt, basisDepth));
+              const spanExtremes = recordExtreme(withoutClose, (pt) => projectAlong(pt, basisSide));
+              return { basisSide, basisDepth, projectAlong, rectFromBasis, depthExtremes, spanExtremes };
+            })()
+          : null;
+
+      if (
+        floor === 3 &&
+        spanBasis &&
+        finalOrderedCenters.length >= 4 &&
+        Number.isFinite(spanBasis.depthExtremes.maxProj) &&
+        Number.isFinite(spanBasis.depthExtremes.minProj) &&
+        Number.isFinite(spanBasis.spanExtremes.minProj) &&
+        Number.isFinite(spanBasis.spanExtremes.maxProj) &&
+        spanBasis.spanExtremes.maxProj - spanBasis.spanExtremes.minProj > 0
+      ) {
+        const availableDepth = Math.max(
+          spanBasis.depthExtremes.maxProj - spanBasis.depthExtremes.minProj,
+          beamSize * 0.5
+        );
+        let crossDepthHalf = Math.max(beamSize * STREET_CROSS_DEPTH_FACTOR, beamSize * 0.2);
+        crossDepthHalf = Math.min(crossDepthHalf, availableDepth / 2);
+        const desiredInset = Math.max(
+          beamSize * STREET_CROSS_DEPTH_CLEARANCE_FACTOR,
+          crossDepthHalf * 0.35
+        );
+        const maxInset = Math.max(availableDepth - crossDepthHalf, beamSize * 0.1);
+        const crossDepthInset = Math.min(desiredInset, maxInset);
+        const minCenter = spanBasis.depthExtremes.minProj + crossDepthHalf;
+        const maxCenter = spanBasis.depthExtremes.maxProj - crossDepthHalf;
+        const desiredCenter = spanBasis.depthExtremes.maxProj - crossDepthInset - crossDepthHalf;
+        const crossDepthCenter = Math.max(minCenter, Math.min(desiredCenter, maxCenter));
+        const verticalHalfWidth = Math.max(beamSize * STREET_CROSS_WIDTH_FACTOR, beamSize * 0.15);
+
+        for (let windowIdx = 0; windowIdx < finalOrderedCenters.length - 1; windowIdx++) {
+          const left = finalOrderedCenters[windowIdx];
+          const right = finalOrderedCenters[windowIdx + 1];
+          const leftS = spanBasis.projectAlong(left.center, spanBasis.basisSide);
+          const rightS = spanBasis.projectAlong(right.center, spanBasis.basisSide);
+          const windowWidth = Math.abs(rightS - leftS);
+          if (!(windowWidth > beamSize * 0.4)) continue;
+          const crossCenterS = (leftS + rightS) / 2;
+
+          const windowInset = Math.max(
+            windowWidth * STREET_CROSS_WINDOW_INSET_FACTOR,
+            verticalHalfWidth * 0.5
+          );
+
+          const verticalRing = spanBasis.rectFromBasis(
+            crossCenterS,
+            crossDepthCenter,
+            verticalHalfWidth,
+            crossDepthHalf
+          );
+          if (verticalRing) {
+            features.push({
+              type: "Feature",
+              id: `street-glass-cross-vertical-${floor}-${idx}-${windowIdx}`,
+              properties: {
+                floor,
+                min_height: baseMin,
+                height: baseMax,
+                kind: "street-glass-cross-vertical",
+              },
+              geometry: { type: "Polygon", coordinates: [verticalRing] },
+            } as GeoJSON.Feature);
+          }
+
+          const horizontalHalfWidth = Math.max(windowWidth / 2 - windowInset, beamSize * 0.18);
+          if (!(horizontalHalfWidth > 0)) continue;
+          const horizontalRing = spanBasis.rectFromBasis(
+            crossCenterS,
+            crossDepthCenter,
+            horizontalHalfWidth,
+            crossDepthHalf
+          );
+          if (horizontalRing) {
+          const spanHeight = baseMax - baseMin;
+          const crossMid = baseMin + spanHeight / 2;
+          const halfHeight = Math.min(STREET_CROSS_HALF_HEIGHT, spanHeight / 2 - 0.01);
+          const horizontalMin = Math.max(baseMin, crossMid - halfHeight);
+          const horizontalMax = Math.min(baseMax, crossMid + halfHeight);
+          features.push({
+            type: "Feature",
+            id: `street-glass-cross-horizontal-${floor}-${idx}-${windowIdx}`,
+            properties: {
+              floor,
+              min_height: horizontalMin,
+              height: horizontalMax,
+              kind: "street-glass-cross-horizontal",
+            },
+            geometry: { type: "Polygon", coordinates: [horizontalRing] },
+          } as GeoJSON.Feature);
+        }
+      }
+    }
+
+    let topBeamPlaced = false;
+
+    if (
+      (floor === 3 || floor === 4) &&
+      spanBasis &&
+      finalOrderedCenters.length >= 2 &&
+      Number.isFinite(spanBasis.depthExtremes.maxProj) &&
+      Number.isFinite(spanBasis.depthExtremes.minProj) &&
+      Number.isFinite(spanBasis.spanExtremes.minProj) &&
+      Number.isFinite(spanBasis.spanExtremes.maxProj)
+    ) {
+      const spanWidth = spanBasis.spanExtremes.maxProj - spanBasis.spanExtremes.minProj;
+      if (spanWidth > beamSize * 0.4) {
+        const edgePadding = Math.min(Math.max(spanWidth * 0.02, beamSize * 0.3), spanWidth / 4);
+        const leftS = spanBasis.spanExtremes.minProj + edgePadding;
+        const rightS = spanBasis.spanExtremes.maxProj - edgePadding;
+        const usableWidth = rightS - leftS;
+        if (usableWidth > beamSize * 0.3) {
+          const halfWidth = usableWidth / 2;
+          const centerS = (leftS + rightS) / 2;
+          const depthOuter = spanBasis.depthExtremes.maxProj;
+          const depthInner = spanBasis.depthExtremes.minProj;
+          const depthSpan = Math.max(depthOuter - depthInner, beamSize * 0.2);
+          const halfDepth = Math.min(
+            Math.max(topThickness / 2, depthSpan * 0.25, beamSize * 0.1),
+            depthSpan / 2
+          );
+          const centerD = depthOuter - halfDepth;
+          const topBeamRing = spanBasis.rectFromBasis(centerS, centerD, halfWidth, halfDepth);
+          if (topBeamRing) {
+            features.push({
+              type: "Feature",
+              id: `street-glass-top-beam-${floor}-${idx}`,
+              properties: {
+                floor,
+                min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
+                height: baseMax,
+                kind: "street-glass-top-beam",
+              },
+              geometry: { type: "Polygon", coordinates: [topBeamRing] },
+            } as GeoJSON.Feature);
+            topBeamPlaced = true;
+          }
+        }
+      }
+    }
+
+    if (
+      !topBeamPlaced &&
+      Number.isFinite(sideExtremes.minProj) &&
+      Number.isFinite(sideExtremes.maxProj) &&
+      Number.isFinite(dirExtremes.maxProj)
+    ) {
+      const sPadding = beamSize * 0.5;
+      const dThickness = topThickness;
+      const leftS = sideExtremes.minProj - sPadding;
+      const rightS = sideExtremes.maxProj + sPadding;
+      const outerD = dirExtremes.maxProj;
+      const innerD = dirExtremes.maxProj - dThickness;
+      const topBeamRing = ensureClosedRing([
+        pointFromSD(leftS, outerD),
+        pointFromSD(rightS, outerD),
+        pointFromSD(rightS, innerD),
+        pointFromSD(leftS, innerD),
+      ]);
+      if (topBeamRing && topBeamRing.length >= 4) {
+        features.push({
+          type: "Feature",
+          id: `street-glass-top-beam-${floor}-${idx}`,
+          properties: {
+            floor,
+            min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
+            height: baseMax,
+            kind: "street-glass-top-beam",
+          },
+          geometry: { type: "Polygon", coordinates: [topBeamRing] },
+        } as GeoJSON.Feature);
+      }
+    }
+
+    });
+  });
+
+  return features.length ? { type: "FeatureCollection", features } : emptyFeatureCollection;
 }
 
 type OutdoorKind = "balcony-floor" | "balcony-rail" | "balcony-post" | "terrace-floor" | "terrace-rail";
@@ -795,6 +1292,9 @@ export default function MapboxScene({
   const [units, setUnits] = useState<Unit[]>([]);
   const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
   const [useRawUnits, setUseRawUnits] = useState(false);
+  const [unitsGeojson, setUnitsGeojson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [terraceGeojson, setTerraceGeojson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [streetGlassGeojson, setStreetGlassGeojson] = useState<GeoJSON.FeatureCollection>(emptyFeatureCollection);
   const [balconyFeatures, setBalconyFeatures] = useState<GeoJSON.FeatureCollection | null>(BALCONY_FALLBACK);
   const [terraceFeatures, setTerraceFeatures] = useState<GeoJSON.FeatureCollection | null>(TERRACE_FALLBACK);
 
@@ -916,6 +1416,7 @@ export default function MapboxScene({
       try { console.info('MapboxScene: updating units source', { features: externalUnits.features?.length ?? 0, hasTransform: !!unitsTransform, useRaw: useRawUnits }); } catch {}
       const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform, { useRaw: useRawUnits });
       unitsSource.setData(data as any);
+      setUnitsGeojson(data as GeoJSON.FeatureCollection);
       const bounds = computeFeatureCollectionBounds(data);
       if (bounds) {
         const pad = 0.0001;
@@ -997,7 +1498,26 @@ export default function MapboxScene({
     const data = makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits, mode: "terrace" });
     try { console.info("MapboxScene: updating terrace source", { features: data.features?.length ?? 0 }); } catch {}
     source.setData(data as any);
+    setTerraceGeojson(data as GeoJSON.FeatureCollection);
   }, [terraceFeatures, unitsTransform, useRawUnits, ready]);
+
+  useEffect(() => {
+    if (!unitsGeojson || !terraceGeojson) {
+      setStreetGlassGeojson(emptyFeatureCollection);
+      return;
+    }
+    const glass = makeStreetGlassFeatureCollection(unitsGeojson, terraceGeojson);
+    setStreetGlassGeojson(glass);
+  }, [unitsGeojson, terraceGeojson]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource("street-glass") as GeoJSONSource | undefined;
+    if (!source) return;
+    source.setData(streetGlassGeojson as any);
+  }, [streetGlassGeojson, ready]);
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
@@ -1082,6 +1602,7 @@ export default function MapboxScene({
           }
 
           map.addSource("units", { type: "geojson", data: unitsSourceData });
+          setUnitsGeojson(unitsSourceData as GeoJSON.FeatureCollection);
           map.addSource("hover-unit", { type: "geojson", data: emptyFeatureCollection });
           map.addSource("hover-edge", { type: "geojson", data: emptyFeatureCollection });
           map.addSource("balconies", {
@@ -1092,6 +1613,8 @@ export default function MapboxScene({
             type: "geojson",
             data: makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits, mode: "terrace" })
           });
+          setTerraceGeojson(makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits, mode: "terrace" }));
+          map.addSource("street-glass", { type: "geojson", data: streetGlassGeojson });
           map.addLayer({
             id: "units-fill",
             type: "fill-extrusion",
@@ -1110,6 +1633,71 @@ export default function MapboxScene({
               "fill-extrusion-height": ["get", "height"],
               "fill-extrusion-base": ["get", "min_height"],
               "fill-extrusion-opacity": 0.98,
+            }
+          });
+          map.addLayer({
+            id: "street-glass-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass"],
+            paint: {
+              "fill-extrusion-color": FACADE_GLASS_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": FACADE_GLASS_OPACITY,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
+          map.addLayer({
+            id: "street-glass-cross-vertical-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass-cross-vertical"],
+            paint: {
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 1,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
+          map.addLayer({
+            id: "street-glass-cross-horizontal-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass-cross-horizontal"],
+            paint: {
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 1,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
+          map.addLayer({
+            id: "street-glass-beam-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass-beam"],
+            paint: {
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 1,
+              "fill-extrusion-vertical-gradient": false
+            }
+          });
+          map.addLayer({
+            id: "street-glass-top-beam-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass-top-beam"],
+            paint: {
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 1,
+              "fill-extrusion-vertical-gradient": false
             }
           });
           map.addLayer({

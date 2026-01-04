@@ -1,0 +1,1987 @@
+"use client";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import mapboxgl, { Map, LngLatLike, GeoJSONSource, MercatorCoordinate } from "mapbox-gl";
+
+import * as THREE from "three";
+import "mapbox-gl/dist/mapbox-gl.css";
+
+export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
+export type MapboxSceneFilter = {
+  activeBuilding: "all" | "a" | "b";
+  rooms?: 1 | 2 | 3 | 4 | null;
+  onlyAvailable?: boolean;
+  hoverFloor?: number | null;
+};
+
+const TOTAL_FLOORS = 6;
+const FLOOR_HEIGHT_M = 3.1;
+const FLOOR_SCALE_OVERRIDES: Record<number, number> = {
+  4: 0.015,
+  5: 0.025,
+  6: 0.035,
+};
+const emptyFeatureCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+const BUILDING_BASE_COLOR = "#ece3db";
+const TERRACE_GLASS_COLOR = "#d9e5f1";
+const TERRACE_GLASS_OPACITY = 0.55;
+const BALCONY_GLASS_COLOR = "#dfe9f4";
+const BALCONY_GLASS_OPACITY = 0.65;
+const FACADE_GLASS_COLOR = "#c6d8eb";
+const FACADE_GLASS_OPACITY = 0.78;
+const STREET_GLASS_TEXTURE_LAYER_ID = "street-glass-textured";
+const GLASS_TEXTURE_PATHS = {
+  base: "/texture/GlassDark_BaseColor.jpg",
+  normal: "/texture/GlassDark_Normal.jpg",
+  roughness: "/texture/GlassDark_Roughness.jpg",
+  opacity: "/texture/GlassDark_Opacity.jpg",
+} as const;
+
+const STREET_WALL_STRIP_SCALE = -0.02;
+const TERRACE_FLOOR_THICKNESS = 0.12;
+const TERRACE_RAIL_HEIGHT = FLOOR_HEIGHT_M / 3;
+const TERRACE_RAIL_SCALE = -0.06;
+const BALCONY_FLOOR_THICKNESS = 0.1;
+const BALCONY_RAIL_HEIGHT = FLOOR_HEIGHT_M * 0.48;
+const BALCONY_RAIL_SCALE = -0.03;
+const BALCONY_POST_SIZE_FACTOR = 0.0025;
+const BALCONY_POST_MIN_SIZE = 0.000002;
+const STREET_BEAM_SIZE_FACTOR = 0.042;
+const STREET_BEAM_MIN_SIZE = 0.0000025;
+const STREET_TOP_BEAM_HEIGHT = 0.22;
+const STREET_TOP_BEAM_THICKNESS_FACTOR = 1.5;
+const BALCONY_FALLBACK: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: { id: "balcony-l3", floor: 2 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.038977023510829, 36.773148311336989],
+            [-4.038928911693906, 36.773142308598672],
+            [-4.038906331644696, 36.77300317878764],
+            [-4.038953086095496, 36.77299834277639],
+            [-4.038977023510829, 36.773148311336989]
+          ]
+        ]
+      }
+    },
+    {
+      type: "Feature",
+      properties: { id: "balcony-l2", floor: 3 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.03895308607562, 36.772998342792285],
+            [-4.038977024011023, 36.77314831409106],
+            [-4.038928911647464, 36.773142308606197],
+            [-4.038906331644529, 36.773003178797943],
+            [-4.03895308607562, 36.772998342792285]
+          ]
+        ]
+      }
+    }
+  ]
+};
+const TERRACE_FALLBACK: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: { id: "terrace-l5", floor: 5 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.039009050309353, 36.773152318939118],
+            [-4.03897702061007, 36.773148320247827],
+            [-4.038953105692699, 36.772998461420102],
+            [-4.039018761180211, 36.772991814241806],
+            [-4.039026026669926, 36.773039458900236],
+            [-4.038989825865965, 36.773043671787349],
+            [-4.039009050309353, 36.773152318939118]
+          ]
+        ]
+      }
+    },
+    {
+      type: "Feature",
+      properties: { id: "terrace-l6", floor: 6 },
+      geometry: {
+        type: "Polygon",
+        coordinates: [
+          [
+            [-4.038999165069861, 36.773097004915414],
+            [-4.038989825863409, 36.773043671772037],
+            [-4.039026026644835, 36.77303945894392],
+            [-4.039018760523848, 36.7729918121791],
+            [-4.039066129842723, 36.772987489192381],
+            [-4.039115268568533, 36.772969209025327],
+            [-4.039127986808273, 36.773026608367154],
+            [-4.03911723081169, 36.773026841323691],
+            [-4.03911805381011, 36.773037210251793],
+            [-4.039018569221341, 36.773047992106072],
+            [-4.03901683596164, 36.773081685828018],
+            [-4.038999506591647, 36.773082839778134],
+            [-4.038999165069861, 36.773097004915414]
+          ]
+        ]
+      }
+    }
+  ]
+};
+const HOVER_EDGE_SCALE = 0.006;
+const HOVER_FACE_SCALE = -0.003;
+const HOVER_BASE_LIFT = 0.18;
+
+type Unit = { id: string; floor: number; status: "available" | "reserved" | "sold"; area: number; rooms: number; polyUV: [number, number][] };
+type BalconyProperties = {
+  floor?: number;
+  base?: number;
+  height?: number;
+  id?: string | number;
+  type?: string;
+};
+
+type AxisBasis = {
+  center: [number, number];
+  axes: [[number, number], [number, number]];
+  spreads: [number, number];
+};
+
+type UnitsTransform = {
+  source: AxisBasis;
+  target: AxisBasis;
+  scales: [number, number];
+};
+
+type StreetGlassTextures = {
+  base: THREE.Texture;
+  normal?: THREE.Texture | null;
+  roughness?: THREE.Texture | null;
+  opacity?: THREE.Texture | null;
+};
+
+type StreetGlassLayerHandle = {
+  layer: mapboxgl.CustomLayerInterface;
+  update: (features: GeoJSON.Feature[]) => void;
+  dispose: () => void;
+};
+
+// Парсинг geojson квартир
+async function loadUnitsFromGeojson(): Promise<Unit[]> {
+  const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
+  const units: Unit[] = [];
+  for (const f of floors) {
+    try {
+      const fileName = `floor${f}.geojson`;
+      const res = await fetch(`/plans/geojson/${fileName}`, { cache: "no-store" });
+      if (!res.ok) continue;
+      const geojson = await res.json();
+      if (geojson && geojson.features) {
+        for (const feat of geojson.features) {
+          // предполагаем, что properties содержит нужные данные
+          const props = feat.properties || {};
+          units.push({
+            id: props.id || `${f}-${units.length+1}`,
+            floor: f,
+            status: props.status || "available",
+            area: props.area || 40,
+            rooms: props.rooms || 2,
+            polyUV: feat.geometry?.coordinates?.[0]?.map((p: number[]) => [p[0], p[1]]) || [[0,0],[1,0],[1,1],[0,1]],
+          });
+        }
+      }
+    } catch {}
+  }
+  return units;
+}
+
+async function loadFloorFeatureCollection(): Promise<GeoJSON.FeatureCollection | null> {
+  const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
+  const features: GeoJSON.Feature[] = [];
+  for (const f of floors) {
+    try {
+      const fileName = `floor${f}.geojson`;
+      const res = await fetch(`/plans/geojson/${fileName}`, { cache: "no-store" });
+      if (!res.ok) continue;
+      const geojson = await res.json();
+      if (geojson && Array.isArray(geojson.features)) {
+        try { console.info(`MapboxScene: loaded ${fileName} with ${geojson.features.length} features`); } catch {}
+        for (const feat of geojson.features) {
+          features.push({
+            ...(feat as GeoJSON.Feature),
+            properties: { ...(feat.properties || {}), floor: f },
+          });
+        }
+      }
+    } catch {
+      // ignore missing floor file
+    }
+  }
+  return features.length ? { type: 'FeatureCollection', features } : null;
+}
+
+let sharedTextureLoader: THREE.TextureLoader | null = null;
+let streetGlassTexturesPromise: Promise<StreetGlassTextures> | null = null;
+
+function getTextureLoader(): THREE.TextureLoader | null {
+  if (typeof window === "undefined") return null;
+  if (!sharedTextureLoader) {
+    sharedTextureLoader = new THREE.TextureLoader();
+  }
+  return sharedTextureLoader;
+}
+
+function applyGlassTextureSettings(texture: THREE.Texture | null, opts?: { srgb?: boolean }) {
+  if (!texture) return null;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  texture.flipY = false;
+  texture.generateMipmaps = true;
+  if (opts?.srgb) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }
+  texture.needsUpdate = true;
+  return texture;
+}
+
+async function loadStreetGlassTextures(): Promise<StreetGlassTextures> {
+  if (streetGlassTexturesPromise) return streetGlassTexturesPromise;
+  const loader = getTextureLoader();
+  if (!loader) {
+    throw new Error("Street glass textures cannot be loaded on the server");
+  }
+  streetGlassTexturesPromise = Promise.all([
+    loader.loadAsync(GLASS_TEXTURE_PATHS.base),
+    loader.loadAsync(GLASS_TEXTURE_PATHS.normal),
+    loader.loadAsync(GLASS_TEXTURE_PATHS.roughness),
+    loader.loadAsync(GLASS_TEXTURE_PATHS.opacity),
+  ]).then(([base, normal, roughness, opacity]) => ({
+    base: applyGlassTextureSettings(base, { srgb: true })!,
+    normal: applyGlassTextureSettings(normal),
+    roughness: applyGlassTextureSettings(roughness),
+    opacity: applyGlassTextureSettings(opacity),
+  }));
+  return streetGlassTexturesPromise;
+}
+
+function getFeatureHeights(feature: GeoJSON.Feature): { min: number; max: number } {
+  const props: any = feature.properties || {};
+  const min = Number(props.min_height ?? 0);
+  const max = Number(props.height ?? min);
+  return {
+    min: Number.isFinite(min) ? min : 0,
+    max: Number.isFinite(max) ? max : 0,
+  };
+}
+
+function getPolygonRings(geometry: GeoJSON.Geometry | null | undefined): [number, number][][] | null {
+  if (!geometry) return null;
+  if (geometry.type === "Polygon") {
+    return (geometry.coordinates as number[][][]).map((ring) => ring.map((p) => [Number(p[0]), Number(p[1])] as [number, number]));
+  }
+  if (geometry.type === "MultiPolygon") {
+    const polys = geometry.coordinates as number[][][][];
+    if (!polys?.length) return null;
+    return polys[0].map((ring) => ring.map((p) => [Number(p[0]), Number(p[1])] as [number, number]));
+  }
+  return null;
+}
+
+function buildExtrudedPolygonGeometryMercator(
+  ringsLngLat: [number, number][][],
+  minMeters: number,
+  maxMeters: number
+): THREE.BufferGeometry | null {
+  if (!ringsLngLat?.length) return null;
+
+  const outer = ringsLngLat[0];
+  if (!outer || outer.length < 3) return null;
+
+  const outerNoClose = (outer.length > 3 && outer[0][0] === outer[outer.length - 1][0] && outer[0][1] === outer[outer.length - 1][1])
+    ? outer.slice(0, -1)
+    : outer;
+
+  const holes = ringsLngLat.slice(1).map((ring) => {
+    if (!ring || ring.length < 4) return [];
+    const noClose = (ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1])
+      ? ring.slice(0, -1)
+      : ring;
+    return noClose;
+  }).filter((r) => r.length >= 3);
+
+  const contour2D: THREE.Vector2[] = outerNoClose.map(([lng, lat]) => {
+    const mc = MercatorCoordinate.fromLngLat({ lng, lat }, 0);
+    return new THREE.Vector2(mc.x, mc.y);
+  });
+
+  const holes2D: THREE.Vector2[][] = holes.map((ring) => ring.map(([lng, lat]) => {
+    const mc = MercatorCoordinate.fromLngLat({ lng, lat }, 0);
+    return new THREE.Vector2(mc.x, mc.y);
+  }));
+
+  const triangles = THREE.ShapeUtils.triangulateShape(contour2D, holes2D);
+  if (!triangles?.length) return null;
+
+  const vertices2D: THREE.Vector2[] = [...contour2D, ...holes2D.flat()];
+  const indices: number[] = [];
+  for (const tri of triangles) {
+    indices.push(tri[0], tri[1], tri[2]);
+  }
+
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const bbox = new THREE.Box2();
+  vertices2D.forEach((v) => bbox.expandByPoint(v));
+  const size = new THREE.Vector2();
+  bbox.getSize(size);
+  const safeW = size.x || 1;
+  const safeH = size.y || 1;
+
+  const pushVertex = (v: THREE.Vector2, z: number) => {
+    positions.push(v.x, v.y, z);
+    const u = (v.x - bbox.min.x) / safeW;
+    const vv = (v.y - bbox.min.y) / safeH;
+    uvs.push(u, vv);
+  };
+
+  const zMin = MercatorCoordinate.fromLngLat({ lng: outerNoClose[0][0], lat: outerNoClose[0][1] }, minMeters).z;
+  const zMax = MercatorCoordinate.fromLngLat({ lng: outerNoClose[0][0], lat: outerNoClose[0][1] }, maxMeters).z;
+
+  for (const v of vertices2D) pushVertex(v, zMin);
+  for (const v of vertices2D) pushVertex(v, zMax);
+
+  const bottomOffset = 0;
+  const topOffset = vertices2D.length;
+
+  const geom = new THREE.BufferGeometry();
+  const allIndices: number[] = [];
+
+  // bottom (reverse winding)
+  for (let i = 0; i < indices.length; i += 3) {
+    allIndices.push(
+      bottomOffset + indices[i + 2],
+      bottomOffset + indices[i + 1],
+      bottomOffset + indices[i]
+    );
+  }
+
+  // top
+  for (let i = 0; i < indices.length; i += 3) {
+    allIndices.push(
+      topOffset + indices[i],
+      topOffset + indices[i + 1],
+      topOffset + indices[i + 2]
+    );
+  }
+
+  // sides: only outer ring (good enough for facade)
+  for (let i = 0; i < contour2D.length; i++) {
+    const a = i;
+    const b = (i + 1) % contour2D.length;
+    const a0 = bottomOffset + a;
+    const b0 = bottomOffset + b;
+    const a1 = topOffset + a;
+    const b1 = topOffset + b;
+    allIndices.push(a0, b0, b1);
+    allIndices.push(a0, b1, a1);
+  }
+
+  geom.setIndex(allIndices);
+  geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geom.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geom.computeVertexNormals();
+  return geom;
+}
+
+function createStreetGlassTexturedLayer(initialFeatures: GeoJSON.Feature[]): StreetGlassLayerHandle {
+  let map: mapboxgl.Map | null = null;
+  let renderer: THREE.WebGLRenderer | null = null;
+  let scene: THREE.Scene | null = null;
+  let camera: THREE.Camera | null = null;
+  let root: THREE.Group | null = null;
+  let material: THREE.MeshPhysicalMaterial | null = null;
+  let disposed = false;
+  let textures: StreetGlassTextures | null = null;
+
+  const rebuildMeshes = (features: GeoJSON.Feature[]) => {
+    if (!root || !scene || disposed) return;
+    while (root.children.length) {
+      const child = root.children.pop();
+      if (!child) break;
+      child.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        const g = mesh.geometry as any;
+        if (g && typeof g.dispose === "function") g.dispose();
+      });
+    }
+
+    const glassFeatures = (features || []).filter((f) => {
+      const kind = (f.properties as any)?.kind;
+      return kind === "street-glass";
+    });
+
+    for (const f of glassFeatures) {
+      const rings = getPolygonRings(f.geometry as any);
+      if (!rings) continue;
+      const { min, max } = getFeatureHeights(f);
+      const geom = buildExtrudedPolygonGeometryMercator(rings, min, max);
+      if (!geom) continue;
+      const mesh = new THREE.Mesh(geom, material ?? new THREE.MeshPhysicalMaterial({ color: 0xffffff }));
+      mesh.frustumCulled = false;
+      root.add(mesh);
+    }
+
+    if (map) map.triggerRepaint();
+  };
+
+  const layer: mapboxgl.CustomLayerInterface = {
+    id: STREET_GLASS_TEXTURE_LAYER_ID,
+    type: "custom",
+    renderingMode: "3d",
+    onAdd: (m, gl) => {
+      map = m;
+      scene = new THREE.Scene();
+      camera = new THREE.Camera();
+      root = new THREE.Group();
+      scene.add(root);
+
+      renderer = new THREE.WebGLRenderer({
+        canvas: map.getCanvas(),
+        context: gl as any,
+        antialias: true,
+      });
+      renderer.autoClear = false;
+
+      loadStreetGlassTextures()
+        .then((t) => {
+          textures = t;
+          material = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            map: t.base,
+            normalMap: t.normal ?? null,
+            roughnessMap: t.roughness ?? null,
+            alphaMap: t.opacity ?? null,
+            transparent: true,
+            opacity: 1,
+            transmission: 1,
+            roughness: 0.2,
+            metalness: 0,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          });
+          rebuildMeshes(initialFeatures);
+        })
+        .catch((e) => {
+          try { console.warn("MapboxScene: failed to load glass textures", e); } catch {}
+          material = new THREE.MeshPhysicalMaterial({
+            color: 0xbfd3e8,
+            transparent: true,
+            opacity: 0.35,
+            transmission: 0.9,
+            roughness: 0.25,
+            metalness: 0,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          });
+          rebuildMeshes(initialFeatures);
+        });
+    },
+    render: (gl, matrix) => {
+      if (!renderer || !scene || !camera || disposed) return;
+      (camera as any).projectionMatrix = new THREE.Matrix4().fromArray(matrix as any);
+      renderer.state.reset();
+      renderer.render(scene, camera);
+      if (map) map.triggerRepaint();
+    },
+    onRemove: () => {
+      disposed = true;
+      if (root) {
+        root.traverse((obj) => {
+          const mesh = obj as THREE.Mesh;
+          const g = (mesh as any).geometry;
+          if (g && typeof g.dispose === "function") g.dispose();
+        });
+      }
+      if (material) material.dispose();
+      if (textures) {
+        textures.base?.dispose?.();
+        textures.normal?.dispose?.();
+        textures.roughness?.dispose?.();
+        textures.opacity?.dispose?.();
+      }
+      renderer = null;
+      scene = null;
+      camera = null;
+      root = null;
+      material = null;
+      map = null;
+    },
+  };
+
+  return {
+    layer,
+    update: (features) => rebuildMeshes(features),
+    dispose: () => {
+      try {
+        if (map && map.getLayer(STREET_GLASS_TEXTURE_LAYER_ID)) {
+          map.removeLayer(STREET_GLASS_TEXTURE_LAYER_ID);
+        }
+      } catch {}
+    },
+  };
+}
+
+// Билинейная проекция UV -> lngLat на четырехугольник (контур здания)
+function uvToLngLat(uv: [number, number], quad: [number, number][]) {
+  const [u, v] = uv;
+  const [A, B, C, D] = quad; // по часовой
+
+  const lerp = (p: number[], q: number[], t: number) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t] as [number, number];
+  const E = lerp(A, D, v);
+  const F = lerp(B, C, v);
+  return lerp(E, F, u) as [number, number];
+}
+
+function sanitizeStyleExpression(expr: any): any {
+  if (!Array.isArray(expr)) return expr;
+  if (expr.length === 2 && expr[0] === "get" && expr[1] === "sizerank") {
+    return ["coalesce", ["get", "sizerank"], 0];
+  }
+  return expr.map((e: any) => sanitizeStyleExpression(e));
+}
+
+function normalizeRing(ring: number[][]): [number, number][] | null {
+  if (!Array.isArray(ring) || ring.length < 3) return null;
+  return ring.map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+}
+
+function collectFeaturePoints(feature: GeoJSON.Feature): [number, number][] {
+  const pts: [number, number][] = [];
+  if (!feature.geometry) return pts;
+  const pushRing = (ring: number[][]) => {
+    const normalized = normalizeRing(ring);
+    if (normalized) pts.push(...normalized);
+  };
+  if (feature.geometry.type === "Polygon") {
+    const rings = feature.geometry.coordinates as number[][][];
+    rings?.forEach(pushRing);
+  } else if (feature.geometry.type === "MultiPolygon") {
+    const polys = feature.geometry.coordinates as number[][][][];
+    polys?.forEach(poly => poly.forEach(pushRing));
+  }
+  return pts;
+}
+
+function convexHull(points: [number, number][]): [number, number][] {
+  if (points.length < 3) return points;
+  const sorted = [...points].sort((a, b) => (a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]));
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  upper.pop();
+  lower.pop();
+  return [...lower, ...upper];
+}
+
+function centroidOfPolygon(points: [number, number][]): [number, number] {
+  if (!points.length) return [0, 0];
+  const sum = points.reduce<[number, number]>((acc, p) => [acc[0] + p[0], acc[1] + p[1]], [0, 0]);
+  return [sum[0] / points.length, sum[1] / points.length];
+}
+
+function deriveFootprintFromUnits(collection: GeoJSON.FeatureCollection | null): [number, number][] | null {
+  if (!collection || !Array.isArray(collection.features)) return null;
+  const pts: [number, number][] = [];
+  for (const feature of collection.features) {
+    pts.push(...collectFeaturePoints(feature as GeoJSON.Feature));
+  }
+  if (!pts.length) return null;
+  const hull = convexHull(pts);
+  return hull.length >= 3 ? hull : null;
+}
+
+function offsetGeometry(geometry: any, offset: [number, number] | null): any {
+  if (!geometry || !offset) return geometry;
+  const shiftPoint = (pt: number[]): [number, number] => [pt[0] + offset[0], pt[1] + offset[1]];
+  if (geometry.type === 'Polygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(shiftPoint)),
+    };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => ring.map(shiftPoint))
+      ),
+    };
+  }
+  return geometry;
+}
+
+function collectGeometryPoints(geometry: any): [number, number][] {
+  const points: [number, number][] = [];
+  const visit = (coords: any) => {
+    if (Array.isArray(coords) && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      if (Number.isFinite(coords[0]) && Number.isFinite(coords[1])) {
+        points.push([Number(coords[0]), Number(coords[1])]);
+      }
+      return;
+    }
+    if (Array.isArray(coords)) coords.forEach(visit);
+  };
+  visit(geometry?.coordinates);
+  return points;
+}
+
+function scaleGeometry(geometry: any, factor: number): any {
+  if (!geometry || !factor) return geometry;
+  const pts = collectGeometryPoints(geometry);
+  if (!pts.length) return geometry;
+  const center = centroidOfPolygon(pts);
+  const scalePoint = (pt: number[]): [number, number] => {
+    const scaled: [number, number] = [
+      center[0] + (pt[0] - center[0]) * (1 + factor),
+      center[1] + (pt[1] - center[1]) * (1 + factor),
+    ];
+    if (!Number.isFinite(scaled[0]) || !Number.isFinite(scaled[1])) return [pt[0], pt[1]];
+    return scaled;
+  };
+  if (geometry.type === 'Polygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(scalePoint)),
+    };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => ring.map(scalePoint))
+      ),
+    };
+  }
+  return geometry;
+}
+
+function makeExternalUnitsFeatureCollection(
+  externalUnits: GeoJSON.FeatureCollection,
+  unitsTransform: UnitsTransform | null,
+  opts?: { useRaw?: boolean }
+): GeoJSON.FeatureCollection {
+  const features = externalUnits.features.map((f: any, idx: number) => {
+    const copy = { ...f } as any;
+    const props = { ...(copy.properties || {}) } as any;
+    const floor = Number(isFinite(props.floor) ? props.floor : 1);
+    const status = String(props.status || 'available').toLowerCase();
+    const statusMap: Record<string, Unit['status']> = {
+      available: 'available',
+      aviable: 'available',
+      free: 'available',
+      reserved: 'reserved',
+      booked: 'reserved',
+      sold: 'sold',
+      xz: 'reserved',
+    };
+    props.status = statusMap[status] || 'available';
+    props.min_height = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+    props.height = floor * FLOOR_HEIGHT_M - 0.02;
+    props.cap_min_height = Math.max(props.min_height, props.height - 0.08);
+    props.floor = floor;
+    copy.properties = props;
+    const baseId = props.id ? String(props.id) : `ext-${idx}`;
+    copy.id = `${baseId}-f${floor}`;
+    let geom = copy.geometry;
+    if (opts?.useRaw && FLOOR_SCALE_OVERRIDES[floor]) {
+      geom = scaleGeometry(geom, FLOOR_SCALE_OVERRIDES[floor]);
+    }
+    geom = transformGeometry(geom, unitsTransform);
+    copy.geometry = geom;
+    if (copy.geometry && copy.geometry.type === 'MultiPolygon') {
+      copy.geometry.coordinates = copy.geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => {
+          if (!ring.length) return ring;
+          const first = ring[0];
+          const last = ring[ring.length - 1];
+          if (first[0] !== last[0] || first[1] !== last[1]) {
+            return [...ring, first];
+          }
+          return ring;
+        })
+      );
+    }
+    return copy;
+  });
+  try { console.info('MapboxScene: using external units.geojson with', features.length, 'features'); } catch {}
+  return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
+}
+
+function makeStreetGlassFeatureCollection(
+  unitsFc: GeoJSON.FeatureCollection | null,
+  terraceFc: GeoJSON.FeatureCollection | null
+): GeoJSON.FeatureCollection {
+  if (!unitsFc || !terraceFc) return emptyFeatureCollection;
+  const floorUnits = unitsFc.features.filter((feature) => {
+    const props = feature.properties as any;
+    return Number(props?.floor) === 4;
+  });
+  if (!floorUnits.length) return emptyFeatureCollection;
+  const refFeature = floorUnits[0] as GeoJSON.Feature;
+  const baseMin = Number((refFeature.properties as any)?.min_height ?? (3 * FLOOR_HEIGHT_M));
+  const baseMax = Number((refFeature.properties as any)?.height ?? (4 * FLOOR_HEIGHT_M));
+  const primaryRing = getPrimaryRing(refFeature.geometry);
+  if (!primaryRing) return emptyFeatureCollection;
+  const closedRing = ensureClosedRing(primaryRing);
+  const ringPoints = closedRing.slice(0, -1);
+  if (!ringPoints.length) return emptyFeatureCollection;
+  const floorCenter = centroidOfPolygon(ringPoints);
+  const terraceFeature = terraceFc.features.find((feature) => {
+    const props = feature.properties as any;
+    return props?.kind === "terrace-floor" && Number(props?.floor) === 4;
+  });
+  if (!terraceFeature) return emptyFeatureCollection;
+  const terracePoints = collectGeometryPoints(terraceFeature.geometry);
+  if (!terracePoints.length) return emptyFeatureCollection;
+  const terraceCenter = centroidOfPolygon(terracePoints);
+  const dirVecRaw: [number, number] = [terraceCenter[0] - floorCenter[0], terraceCenter[1] - floorCenter[1]];
+  const dirLen = Math.hypot(dirVecRaw[0], dirVecRaw[1]);
+  if (dirLen === 0) return emptyFeatureCollection;
+  const dirVec: [number, number] = [dirVecRaw[0] / dirLen, dirVecRaw[1] / dirLen];
+  const sideAxis: [number, number] = [-dirVec[1], dirVec[0]];
+  const shellGeom = createRailGeometry(refFeature.geometry as any, STREET_WALL_STRIP_SCALE);
+  if (!shellGeom) return emptyFeatureCollection;
+  const features: GeoJSON.Feature[] = [];
+  (shellGeom.coordinates || []).forEach((poly, idx) => {
+    if (!poly?.[0]) return;
+    const ring = poly[0];
+    if (!Array.isArray(ring) || ring.length < 4) return;
+    const withoutClose = ring.slice(0, -1).map((pt: number[]) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+    if (!withoutClose.length) return;
+    const centroid = centroidOfPolygon(withoutClose);
+    const rel: [number, number] = [centroid[0] - floorCenter[0], centroid[1] - floorCenter[1]];
+    const relLen = Math.hypot(rel[0], rel[1]) || 1;
+    const dot = rel[0] * dirVec[0] + rel[1] * dirVec[1];
+    const cosTheta = dot / relLen;
+    if (cosTheta < 0.92) return;
+    const glassFeature: GeoJSON.Feature = {
+      type: "Feature",
+      id: `street-glass-${idx}`,
+      properties: {
+        floor: 4,
+        min_height: baseMin,
+        height: baseMax,
+        kind: "street-glass",
+        facade_normal: dirVec,
+      },
+      geometry: { type: "Polygon", coordinates: [ring] },
+    };
+    features.push(glassFeature);
+
+    const recordExtreme = (
+      pts: [number, number][],
+      projFunc: (pt: [number, number]) => number
+    ) => {
+      let minProj = Number.POSITIVE_INFINITY;
+      let maxProj = Number.NEGATIVE_INFINITY;
+      let minPoints: [number, number][] = [];
+      let maxPoints: [number, number][] = [];
+      const EPS = 1e-8;
+      pts.forEach((pt) => {
+        const proj = projFunc(pt);
+        if (proj < minProj - EPS) {
+          minProj = proj;
+          minPoints = [pt];
+        } else if (Math.abs(proj - minProj) <= EPS) {
+          minPoints.push(pt);
+        }
+        if (proj > maxProj + EPS) {
+          maxProj = proj;
+          maxPoints = [pt];
+        } else if (Math.abs(proj - maxProj) <= EPS) {
+          maxPoints.push(pt);
+        }
+      });
+      return { minPoints, maxPoints, minProj, maxProj };
+    };
+
+    const sideExtremes = recordExtreme(withoutClose, (pt) => {
+      const relPt: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+      return relPt[0] * sideAxis[0] + relPt[1] * sideAxis[1];
+    });
+    const dirExtremes = recordExtreme(withoutClose, (pt) => {
+      const relPt: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+      return relPt[0] * dirVec[0] + relPt[1] * dirVec[1];
+    });
+
+    const avgPoint = (pts: [number, number][]) => {
+      if (!pts.length) return null;
+      const sum = pts.reduce<[number, number]>(
+        (acc, p) => [acc[0] + p[0], acc[1] + p[1]],
+        [0, 0]
+      );
+      return [sum[0] / pts.length, sum[1] / pts.length] as [number, number];
+    };
+
+    const spanBounds = withoutClose.reduce(
+      (acc, [x, y]) => ({
+        minX: Math.min(acc.minX, x),
+        maxX: Math.max(acc.maxX, x),
+        minY: Math.min(acc.minY, y),
+        maxY: Math.max(acc.maxY, y),
+      }),
+      {
+        minX: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        minY: Number.POSITIVE_INFINITY,
+        maxY: Number.NEGATIVE_INFINITY,
+      }
+    );
+    const span =
+      Math.max(spanBounds.maxX - spanBounds.minX, spanBounds.maxY - spanBounds.minY) || 0.00001;
+    const beamSize = Math.max(span * STREET_BEAM_SIZE_FACTOR, STREET_BEAM_MIN_SIZE);
+    const beamInset = Math.min(span * 0.02, beamSize * 2);
+
+    const beamContactPoints: [number, number][] = [];
+    const beamCenters: { center: [number, number]; side: number }[] = [];
+    const addBeamAt = (center: [number, number], suffix: string) => {
+      const beamPoly = createPostPolygon(center, beamSize);
+      if (!beamPoly || beamPoly.length < 4) return;
+      const relToCenter: [number, number] = [center[0] - floorCenter[0], center[1] - floorCenter[1]];
+      const sideCoord = relToCenter[0] * sideAxis[0] + relToCenter[1] * sideAxis[1];
+      const sideSign = sideCoord >= 0 ? 1 : -1;
+      features.push({
+        type: "Feature",
+        id: `street-glass-beam-${idx}-${suffix}`,
+        properties: {
+          floor: 4,
+          min_height: baseMin,
+          height: baseMax,
+          kind: "street-glass-beam",
+        },
+        geometry: { type: "Polygon", coordinates: [beamPoly] },
+      } as GeoJSON.Feature);
+      const relPoints = beamPoly.map((pt) => {
+        const rel: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+        return {
+          point: pt as [number, number],
+          side: rel[0] * sideAxis[0] + rel[1] * sideAxis[1],
+          dir: rel[0] * dirVec[0] + rel[1] * dirVec[1],
+        };
+      });
+      const maxDir = Math.max(...relPoints.map((p) => p.dir));
+      const frontCandidates = relPoints.filter((p) => Math.abs(p.dir - maxDir) < 1e-9);
+      const chosen = frontCandidates.reduce<typeof relPoints[0] | null>((acc, cur) => {
+        if (!acc) return cur;
+        if (sideSign >= 0) {
+          return cur.side > acc.side ? cur : acc;
+        }
+        return cur.side < acc.side ? cur : acc;
+      }, null);
+      if (chosen) beamContactPoints.push(chosen.point);
+      beamCenters.push({ center, side: sideCoord });
+    };
+
+    const basePositions = [avgPoint(sideExtremes.minPoints), avgPoint(sideExtremes.maxPoints)].filter(
+      (pt): pt is [number, number] => Array.isArray(pt)
+    );
+    basePositions.forEach((pos, beamIdx) => {
+      if (!pos) return;
+      const relToCenter: [number, number] = [pos[0] - floorCenter[0], pos[1] - floorCenter[1]];
+      const sideSign = (relToCenter[0] * sideAxis[0] + relToCenter[1] * sideAxis[1]) >= 0 ? 1 : -1;
+      let insetPos = pos;
+      if (beamInset > 0) {
+        insetPos = [
+          pos[0] - sideAxis[0] * sideSign * beamInset,
+          pos[1] - sideAxis[1] * sideSign * beamInset,
+        ];
+      }
+      addBeamAt(insetPos, `corner-${beamIdx}`);
+    });
+
+    if (beamCenters.length >= 2) {
+      const orderedCenters = [...beamCenters].sort((a, b) => a.side - b.side);
+      const leftCenter = orderedCenters[0].center;
+      const rightCenter = orderedCenters[orderedCenters.length - 1].center;
+      const delta: [number, number] = [rightCenter[0] - leftCenter[0], rightCenter[1] - leftCenter[1]];
+      [1 / 3, 2 / 3].forEach((frac, fracIdx) => {
+        const newCenter: [number, number] = [
+          leftCenter[0] + delta[0] * frac,
+          leftCenter[1] + delta[1] * frac,
+        ];
+        addBeamAt(newCenter, `inner-${fracIdx}`);
+      });
+    }
+
+    const shiftInward = (pt: [number, number], dist: number): [number, number] => [
+      pt[0] - dirVec[0] * dist,
+      pt[1] - dirVec[1] * dist,
+    ];
+
+    const topThickness = beamSize * STREET_TOP_BEAM_THICKNESS_FACTOR;
+    if (beamContactPoints.length >= 2) {
+      const ordered = beamContactPoints
+        .map((pt) => ({
+          pt,
+          side: (pt[0] - floorCenter[0]) * sideAxis[0] + (pt[1] - floorCenter[1]) * sideAxis[1],
+        }))
+        .sort((a, b) => a.side - b.side);
+      const leftPoint = ordered[0].pt;
+      const rightPoint = ordered[ordered.length - 1].pt;
+      const topBeamRing = ensureClosedRing([
+        leftPoint,
+        rightPoint,
+        shiftInward(rightPoint, topThickness),
+        shiftInward(leftPoint, topThickness),
+      ]);
+      if (topBeamRing && topBeamRing.length >= 4) {
+        features.push({
+          type: "Feature",
+          id: `street-glass-top-beam-${idx}`,
+          properties: {
+            floor: 4,
+            min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
+            height: baseMax,
+            kind: "street-glass-top-beam",
+          },
+          geometry: { type: "Polygon", coordinates: [topBeamRing] },
+        } as GeoJSON.Feature);
+      }
+    } else if (
+      Number.isFinite(sideExtremes.minProj) &&
+      Number.isFinite(sideExtremes.maxProj) &&
+      Number.isFinite(dirExtremes.maxProj)
+    ) {
+      const sPadding = beamSize * 0.5;
+      const dThickness = topThickness;
+      const leftS = sideExtremes.minProj - sPadding;
+      const rightS = sideExtremes.maxProj + sPadding;
+      const outerD = dirExtremes.maxProj;
+      const innerD = dirExtremes.maxProj - dThickness;
+      const pointFromSD = (s: number, d: number): [number, number] => [
+        floorCenter[0] + sideAxis[0] * s + dirVec[0] * d,
+        floorCenter[1] + sideAxis[1] * s + dirVec[1] * d,
+      ];
+      const topBeamRing = ensureClosedRing([
+        pointFromSD(leftS, outerD),
+        pointFromSD(rightS, outerD),
+        pointFromSD(rightS, innerD),
+        pointFromSD(leftS, innerD),
+      ]);
+      if (topBeamRing && topBeamRing.length >= 4) {
+        features.push({
+          type: "Feature",
+          id: `street-glass-top-beam-${idx}`,
+          properties: {
+            floor: 4,
+            min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
+            height: baseMax,
+            kind: "street-glass-top-beam",
+          },
+          geometry: { type: "Polygon", coordinates: [topBeamRing] },
+        } as GeoJSON.Feature);
+      }
+    }
+  });
+  return features.length ? { type: "FeatureCollection", features } : emptyFeatureCollection;
+}
+
+type OutdoorKind = "balcony-floor" | "balcony-rail" | "balcony-post" | "terrace-floor" | "terrace-rail";
+
+function makeOutdoorFeatureCollection(
+  collection: GeoJSON.FeatureCollection | null,
+  unitsTransform: UnitsTransform | null,
+  opts?: { useRaw?: boolean; mode?: "balcony" | "terrace" }
+): GeoJSON.FeatureCollection {
+  if (!collection || !Array.isArray(collection.features)) return emptyFeatureCollection;
+  const closeRing = (ring: number[][]) => {
+    if (!Array.isArray(ring) || !ring.length) return ring;
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (!last || first[0] !== last[0] || first[1] !== last[1]) {
+      return [...ring, first];
+    }
+    return ring;
+  };
+  const features: GeoJSON.Feature[] = [];
+
+  collection.features.forEach((f: any, idx: number) => {
+    const copy = { ...f } as any;
+    const props: BalconyProperties = { ...(copy.properties || {}) };
+    const floor = Number(isFinite(props.floor as number) ? props.floor : 1);
+    const baseMin = (floor - 1) * FLOOR_HEIGHT_M + 0.02;
+    const baseMax = floor * FLOOR_HEIGHT_M - 0.02;
+    let geom = copy.geometry;
+    if (!(opts?.useRaw) && unitsTransform) {
+      geom = transformGeometry(geom, unitsTransform);
+    }
+    if (geom?.type === "Polygon") {
+      geom = {
+        ...geom,
+        coordinates: geom.coordinates.map((ring: number[][]) => closeRing(ring)),
+      };
+    } else if (geom?.type === "MultiPolygon") {
+      geom = {
+        ...geom,
+        coordinates: geom.coordinates.map((poly: number[][][]) =>
+          poly.map((ring: number[][]) => closeRing(ring))
+        ),
+      };
+    }
+    const idBase = copy.id ?? props.id ?? `outdoor-${idx}-f${floor}`;
+    const typeProp = (props.type ?? "").toString().toLowerCase();
+    const mode = opts?.mode ?? (typeProp === "terrace" ? "terrace" : "balcony");
+    if (mode === "terrace") {
+      const floorFeature = {
+        type: "Feature",
+        properties: {
+          ...props,
+          floor,
+          min_height: baseMin,
+          height: baseMin + TERRACE_FLOOR_THICKNESS,
+          kind: "terrace-floor" as OutdoorKind,
+        },
+        geometry: geom,
+        id: `${idBase}-floor`,
+      } as GeoJSON.Feature;
+      features.push(floorFeature);
+      const railGeom = createRailGeometry(geom, TERRACE_RAIL_SCALE);
+      if (railGeom) {
+        const railFeature = {
+          type: "Feature",
+          properties: {
+            ...props,
+            floor,
+            min_height: baseMin + TERRACE_FLOOR_THICKNESS,
+            height: Math.min(baseMin + TERRACE_FLOOR_THICKNESS + TERRACE_RAIL_HEIGHT, baseMax),
+            kind: "terrace-rail" as OutdoorKind,
+          },
+          geometry: railGeom,
+          id: `${idBase}-rail`,
+        } as GeoJSON.Feature;
+        features.push(railFeature);
+      }
+      return;
+    }
+    const primaryRing = getPrimaryRing(geom);
+    const postRing = primaryRing ? ensureClosedRing(primaryRing) : null;
+    const ringVertices = postRing ? postRing.slice(0, postRing.length - 1) : null;
+    const ringCenter = ringVertices?.length ? centroidOfPolygon(ringVertices) : null;
+    const axisBasis = ringVertices?.length ? computeAxisBasis(ringVertices) : null;
+    const shortAxis = axisBasis ? axisBasis.axes[1] : null;
+    const outerSign = ringVertices && ringCenter && shortAxis
+      ? determineOuterSign(ringVertices, ringCenter, shortAxis)
+      : null;
+    // Balcony floor slab
+    const balconyFloor = {
+      type: "Feature",
+      properties: {
+        ...props,
+        floor,
+        min_height: baseMin,
+        height: Math.min(baseMin + BALCONY_FLOOR_THICKNESS, baseMax),
+        kind: "balcony-floor" as OutdoorKind,
+      },
+      geometry: geom,
+      id: `${idBase}-floor`,
+    } as GeoJSON.Feature;
+    features.push(balconyFloor);
+    // Balcony rail
+    let balconyRailGeom = createRailGeometry(geom, BALCONY_RAIL_SCALE);
+    if (balconyRailGeom && ringCenter && shortAxis && outerSign) {
+      const filtered = filterRailGeometryToOuter(balconyRailGeom, ringCenter, shortAxis, outerSign);
+      if (filtered) balconyRailGeom = filtered;
+    }
+    if (balconyRailGeom) {
+      const balconyRail = {
+        type: "Feature",
+        properties: {
+          ...props,
+          floor,
+          min_height: Math.min(baseMin + BALCONY_FLOOR_THICKNESS, baseMax),
+          height: Math.min(baseMin + BALCONY_FLOOR_THICKNESS + BALCONY_RAIL_HEIGHT, baseMax),
+          kind: "balcony-rail" as OutdoorKind,
+        },
+        geometry: balconyRailGeom,
+        id: `${idBase}-rail`,
+      } as GeoJSON.Feature;
+      features.push(balconyRail);
+    }
+    // Balcony posts at key corners
+    if (ringVertices && ringVertices.length) {
+      const postSize = estimatePostSize(ringVertices);
+      const postInset = postSize * 1.35;
+      const postCenter = ringCenter;
+      const extraShortInset = postSize * 0.75;
+      const cornerPoints = filterCornerPoints(ringVertices);
+
+      const placePost = (pt: [number, number], suffix: string) => {
+        let insetPoint = postCenter ? movePointTowards(pt, postCenter, postInset) : pt;
+        if (shortAxis && postCenter) {
+          const vecToCenter: [number, number] = [insetPoint[0] - postCenter[0], insetPoint[1] - postCenter[1]];
+          const alongShort = vecToCenter[0] * shortAxis[0] + vecToCenter[1] * shortAxis[1];
+          const newAlongShort = Math.sign(alongShort || 1) * Math.max(Math.abs(alongShort) - extraShortInset, 0);
+          const delta = newAlongShort - alongShort;
+          insetPoint = [
+            insetPoint[0] + shortAxis[0] * delta,
+            insetPoint[1] + shortAxis[1] * delta,
+          ];
+        }
+        const postPolygon = createPostPolygon(insetPoint, postSize);
+        if (!postPolygon || postPolygon.length < 4) return;
+        features.push({
+          type: "Feature",
+          properties: {
+            ...props,
+            floor,
+            min_height: baseMin,
+            height: baseMax,
+            kind: "balcony-post" as OutdoorKind,
+          },
+          geometry: { type: "Polygon", coordinates: [postPolygon] },
+          id: `${idBase}-post-${suffix}`,
+        } as GeoJSON.Feature);
+      };
+
+      cornerPoints.forEach((pt, cornerIdx) => {
+        placePost(pt, `corner-${cornerIdx}`);
+      });
+
+      if (shortAxis && postCenter) {
+        const front: [number, number][] = [];
+        const back: [number, number][] = [];
+        cornerPoints.forEach((pt) => {
+          const rel: [number, number] = [pt[0] - postCenter[0], pt[1] - postCenter[1]];
+          const projShort = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+          if (projShort >= 0) front.push(pt);
+          else back.push(pt);
+        });
+
+        const targetSign = outerSign ?? (front.length >= back.length ? 1 : -1);
+        const makeMidpoint = (points: [number, number][]) => {
+          if (points.length < 2) return null;
+          const sum = points.reduce<[number, number]>(
+            (acc, p) => [acc[0] + p[0], acc[1] + p[1]],
+            [0, 0]
+          );
+          return [sum[0] / points.length, sum[1] / points.length] as [number, number];
+        };
+
+        const frontMid = makeMidpoint(front);
+        const backMid = makeMidpoint(back);
+        if (targetSign >= 0 && frontMid) {
+          placePost(frontMid, "mid-front");
+        } else if (targetSign < 0 && backMid) {
+          placePost(backMid, "mid-back");
+        }
+      }
+    }
+  });
+  return { type: "FeatureCollection", features } as GeoJSON.FeatureCollection;
+}
+
+function computeFeatureCollectionBounds(fc: GeoJSON.FeatureCollection | null) {
+  if (!fc) return null;
+  let minLng = Number.POSITIVE_INFINITY;
+  let minLat = Number.POSITIVE_INFINITY;
+  let maxLng = Number.NEGATIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+  const visit = (coords: any) => {
+    if (typeof coords?.[0] === 'number' && typeof coords?.[1] === 'number') {
+      const [lng, lat] = coords;
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      minLng = Math.min(minLng, lng);
+      minLat = Math.min(minLat, lat);
+      maxLng = Math.max(maxLng, lng);
+      maxLat = Math.max(maxLat, lat);
+      return;
+    }
+    if (Array.isArray(coords)) coords.forEach(visit);
+  };
+  fc.features.forEach((feature) => {
+    visit((feature.geometry as any)?.coordinates);
+  });
+  if (!Number.isFinite(minLng)) return null;
+  return { min: [minLng, minLat], max: [maxLng, maxLat] } as const;
+}
+
+function makeUnitsFeatureCollection(quad: [number, number][], units: Unit[]) {
+  return {
+    type: "FeatureCollection",
+    features: units.map(u => {
+      const ring = u.polyUV.map(p => uvToLngLat(p, quad));
+      ring.push(ring[0]);
+      // place unit extrusion to occupy the whole floor height on the facade
+      // add small epsilon inset to avoid z-fighting with building top/base
+      const min_h = (u.floor - 1) * FLOOR_HEIGHT_M + 0.02;
+      const h = u.floor * FLOOR_HEIGHT_M - 0.02;
+      return {
+        type: "Feature",
+        properties: { id: u.id, floor: u.floor, status: u.status, area: u.area, rooms: u.rooms, min_height: min_h, height: h },
+        geometry: { type: "Polygon", coordinates: [ring] }
+      };
+    })
+  } as GeoJSON.FeatureCollection;
+}
+
+function normalizeVector(vec: [number, number]): [number, number] {
+  const len = Math.hypot(vec[0], vec[1]) || 1;
+  return [vec[0] / len, vec[1] / len];
+}
+
+function computeAxisBasis(points: [number, number][]): AxisBasis | null {
+  if (!points.length) return null;
+  const center = centroidOfPolygon(points);
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const [x, y] of points) {
+    const dx = x - center[0];
+    const dy = y - center[1];
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
+  }
+  const n = points.length || 1;
+  const covXX = sxx / n;
+  const covYY = syy / n;
+  const covXY = sxy / n;
+  const trace = covXX + covYY;
+  const det = covXX * covYY - covXY * covXY;
+  const discr = Math.max(trace * trace / 4 - det, 0);
+  const lambda1 = trace / 2 + Math.sqrt(discr);
+  const lambda2 = trace / 2 - Math.sqrt(discr);
+  let axis1: [number, number];
+  if (Math.abs(covXY) > 1e-9) {
+    axis1 = [lambda1 - covYY, covXY];
+  } else {
+    axis1 = covXX >= covYY ? [1, 0] : [0, 1];
+  }
+  axis1 = normalizeVector(axis1);
+  const axis2: [number, number] = [-axis1[1], axis1[0]];
+  const spreads: [number, number] = [Math.sqrt(Math.max(lambda1, 1e-12)), Math.sqrt(Math.max(lambda2, 1e-12))];
+  return { center, axes: [axis1, axis2], spreads };
+}
+
+function buildUnitsTransform(sourcePoints: [number, number][], targetPoints: [number, number][]): UnitsTransform | null {
+  const source = computeAxisBasis(sourcePoints);
+  const target = computeAxisBasis(targetPoints);
+  if (!source || !target) return null;
+  const scale1 = target.spreads[0] / (source.spreads[0] || 1);
+  const scale2 = target.spreads[1] / (source.spreads[1] || 1);
+  return { source, target, scales: [scale1, scale2] };
+}
+
+function transformPointUsingBasis(pt: [number, number], transform: UnitsTransform): [number, number] {
+  const { source, target, scales } = transform;
+  const rel: [number, number] = [pt[0] - source.center[0], pt[1] - source.center[1]];
+  const proj1 = rel[0] * source.axes[0][0] + rel[1] * source.axes[0][1];
+  const proj2 = rel[0] * source.axes[1][0] + rel[1] * source.axes[1][1];
+  const mapped: [number, number] = [
+    proj1 * scales[0] * target.axes[0][0] + proj2 * scales[1] * target.axes[1][0],
+    proj1 * scales[0] * target.axes[0][1] + proj2 * scales[1] * target.axes[1][1],
+  ];
+  return [mapped[0] + target.center[0], mapped[1] + target.center[1]];
+}
+
+function transformGeometry(geometry: any, transform: UnitsTransform | null): any {
+  if (!geometry || !transform) return geometry;
+  const apply = (pt: number[]): [number, number] => {
+    const mapped = transformPointUsingBasis([pt[0], pt[1]], transform);
+    if (!Number.isFinite(mapped[0]) || !Number.isFinite(mapped[1])) {
+      return [pt[0], pt[1]];
+    }
+    return mapped;
+  };
+  if (geometry.type === 'Polygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((ring: number[][]) => ring.map(apply)),
+    };
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: geometry.coordinates.map((poly: number[][][]) =>
+        poly.map((ring: number[][]) => ring.map(apply))
+      ),
+    };
+  }
+  return geometry;
+}
+
+export default function MapboxScene({
+  filter,
+  onPick,
+}: {
+  filter: MapboxSceneFilter;
+  onPick?: (u: MapboxPickedUnit) => void;
+}) {
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<Map | null>(null);
+  const streetGlassLayerRef = useRef<StreetGlassLayerHandle | null>(null);
+  const tipRef = useRef<HTMLDivElement | null>(null);
+  const [ready, setReady] = useState(false);
+  const hasCustomFootprint = useRef(false);
+  const [unitsTransform, setUnitsTransform] = useState<UnitsTransform | null>(null);
+
+  const center = useMemo<[number, number]>(() => {
+    const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
+    const lng = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LNG || "-4.0387");
+    return [lng, lat];
+  }, []);
+
+  const [footprint, setFootprint] = useState<[number, number][]>(() => {
+    const [lng, lat] = center;
+    const dx = 0.00009 * Math.cos(lat * Math.PI / 180);
+    const dy = 0.00006;
+    return [
+      [lng - dx, lat + dy],
+      [lng + dx, lat + dy],
+      [lng + dx * 0.95, lat - dy],
+      [lng - dx * 0.95, lat - dy],
+    ];
+  });
+
+  // Try to load a user-provided footprint / quad from public/building-quad.json
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/building-quad.json');
+        if (!res.ok) { try { console.warn('MapboxScene: /building-quad.json not found', res.status); } catch {} ; return; }
+        const json = await res.json();
+        let quad: [number, number][] | null = null;
+        // support simple array [[lng,lat],..] or GeoJSON Feature / FeatureCollection with Polygon
+        const normalizeRing = (ring: any) => {
+          if (!Array.isArray(ring)) return null;
+          const coords = ring.filter((p: any) => Array.isArray(p) && typeof p[0] === 'number' && typeof p[1] === 'number');
+          if (!coords.length) return null;
+          const first = coords[0];
+          const last = coords[coords.length - 1];
+          if (first && last && first[0] === last[0] && first[1] === last[1]) {
+            coords.pop();
+          }
+          return coords.length >= 3 ? coords as [number, number][] : null;
+        };
+        if (Array.isArray(json) && json.length >= 3 && Array.isArray(json[0])) {
+          quad = normalizeRing(json as any) ?? null;
+        } else if (json && json.type === 'Feature' && json.geometry && json.geometry.type === 'Polygon') {
+          quad = normalizeRing(json.geometry.coordinates[0]) ?? null;
+        } else if (json && json.type === 'FeatureCollection' && Array.isArray(json.features) && json.features.length) {
+          const f = json.features.find((ff: any) => ff.geometry && ff.geometry.type === 'Polygon');
+          if (f) quad = normalizeRing(f.geometry.coordinates[0]) ?? null;
+        }
+        if (quad && mounted) setFootprint(quad);
+        if (quad && mounted) {
+          try { console.info('MapboxScene: loaded building-quad.json, using quad:', quad); } catch {}
+          setFootprint(quad);
+          hasCustomFootprint.current = true;
+        }
+      } catch (e) {
+        try { console.warn('MapboxScene: failed to load /building-quad.json', e); } catch {}
+        // ignore - fallback to generated rectangle
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [externalUnits, setExternalUnits] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [useRawUnits, setUseRawUnits] = useState(false);
+  const [unitsGeojson, setUnitsGeojson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [terraceGeojson, setTerraceGeojson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [streetGlassGeojson, setStreetGlassGeojson] = useState<GeoJSON.FeatureCollection>(emptyFeatureCollection);
+  const [balconyFeatures, setBalconyFeatures] = useState<GeoJSON.FeatureCollection | null>(BALCONY_FALLBACK);
+  const [terraceFeatures, setTerraceFeatures] = useState<GeoJSON.FeatureCollection | null>(TERRACE_FALLBACK);
+
+  // fallback UV units for demo/testing
+  useEffect(() => {
+    let mounted = true;
+    loadUnitsFromGeojson()
+      .then((data) => {
+        if (mounted && data.length) setUnits(data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Load detailed per-floor GeoJSON (floor1..floor6). If absent, fall back to legacy units.geojson
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const floorsFC = await loadFloorFeatureCollection();
+      if (mounted && floorsFC) {
+        setExternalUnits(floorsFC);
+        setUseRawUnits(true);
+        try {
+          const [balconRes, terraceRes] = await Promise.allSettled([
+            fetch("/plans/geojson/balcon.geojson", { cache: "no-store" }),
+            fetch("/plans/geojson/terraces.geojson", { cache: "no-store" })
+          ]);
+          if (balconRes.status === "fulfilled" && balconRes.value.ok) {
+            const balconJson = await balconRes.value.json();
+            if (mounted && balconJson?.type === "FeatureCollection") {
+              try { console.info("MapboxScene: loaded balcon.geojson with", balconJson.features?.length ?? 0, "features"); } catch {}
+              setBalconyFeatures(balconJson as GeoJSON.FeatureCollection);
+            }
+          } else {
+            setBalconyFeatures(BALCONY_FALLBACK);
+          }
+          if (terraceRes.status === "fulfilled" && terraceRes.value.ok) {
+            const terraceJson = await terraceRes.value.json();
+            if (mounted && terraceJson?.type === "FeatureCollection") {
+              try { console.info("MapboxScene: loaded terraces.geojson with", terraceJson.features?.length ?? 0, "features"); } catch {}
+              setTerraceFeatures(terraceJson as GeoJSON.FeatureCollection);
+            }
+          } else {
+            setTerraceFeatures(TERRACE_FALLBACK);
+          }
+        } catch {
+          setBalconyFeatures(BALCONY_FALLBACK);
+          setTerraceFeatures(TERRACE_FALLBACK);
+        }
+        return;
+      }
+      try {
+        const res = await fetch('/plans/geojson/units.geojson');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted && json && json.type === 'FeatureCollection') {
+          setExternalUnits(json as GeoJSON.FeatureCollection);
+          setUseRawUnits(false);
+        }
+      } catch {
+        // ignore
+      }
+      try {
+        const [balconRes, terraceRes] = await Promise.allSettled([
+          fetch("/plans/geojson/balcon.geojson", { cache: "no-store" }),
+          fetch("/plans/geojson/terraces.geojson", { cache: "no-store" })
+        ]);
+        if (balconRes.status === "fulfilled" && balconRes.value.ok) {
+          const balconJson = await balconRes.value.json();
+          if (mounted && balconJson?.type === "FeatureCollection") {
+            try { console.info("MapboxScene: loaded balcon.geojson with", balconJson.features?.length ?? 0, "features"); } catch {}
+            setBalconyFeatures(balconJson as GeoJSON.FeatureCollection);
+          }
+        } else {
+          setBalconyFeatures(BALCONY_FALLBACK);
+        }
+        if (terraceRes.status === "fulfilled" && terraceRes.value.ok) {
+          const terraceJson = await terraceRes.value.json();
+          if (mounted && terraceJson?.type === "FeatureCollection") {
+            try { console.info("MapboxScene: loaded terraces.geojson with", terraceJson.features?.length ?? 0, "features"); } catch {}
+            setTerraceFeatures(terraceJson as GeoJSON.FeatureCollection);
+          }
+        } else {
+          setTerraceFeatures(TERRACE_FALLBACK);
+        }
+      } catch {
+        setBalconyFeatures(BALCONY_FALLBACK);
+        setTerraceFeatures(TERRACE_FALLBACK);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!externalUnits || !hasCustomFootprint.current || footprint.length < 3 || useRawUnits) {
+      setUnitsTransform(null);
+      return;
+    }
+    const hull = deriveFootprintFromUnits(externalUnits);
+    if (!hull || hull.length < 3) {
+      setUnitsTransform(null);
+      return;
+    }
+    const transform = buildUnitsTransform(hull, footprint);
+    setUnitsTransform(transform);
+  }, [externalUnits, footprint, useRawUnits]);
+
+  useEffect(() => {
+    if (!externalUnits) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const updateUnits = () => {
+      const unitsSource = map.getSource("units") as GeoJSONSource | undefined;
+      if (!unitsSource) return;
+      try { console.info('MapboxScene: updating units source', { features: externalUnits.features?.length ?? 0, hasTransform: !!unitsTransform, useRaw: useRawUnits }); } catch {}
+      const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform, { useRaw: useRawUnits });
+      unitsSource.setData(data as any);
+      setUnitsGeojson(data as GeoJSON.FeatureCollection);
+      const bounds = computeFeatureCollectionBounds(data);
+      if (bounds) {
+        const pad = 0.0001;
+        const sw: [number, number] = [bounds.min[0] - pad, bounds.min[1] - pad];
+        const ne: [number, number] = [bounds.max[0] + pad, bounds.max[1] + pad];
+        try { console.info('MapboxScene: units bounds', bounds); } catch {}
+        try { map.fitBounds([sw, ne], { padding: 50, duration: 800 }); } catch {}
+      }
+    };
+    if (map.isStyleLoaded()) {
+      updateUnits();
+      return;
+    }
+    const onData = () => {
+      if (!map.isStyleLoaded()) return;
+      map.off("styledata", onData);
+      updateUnits();
+    };
+    map.on("styledata", onData);
+    return () => {
+      map.off("styledata", onData);
+    };
+  }, [externalUnits]);
+
+  useEffect(() => {
+    if (!externalUnits || hasCustomFootprint.current) return;
+    const derived = deriveFootprintFromUnits(externalUnits);
+    if (!derived || derived.length < 4) return;
+    setFootprint(derived);
+  }, [externalUnits]);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current || !token) return;
+    mapboxgl.accessToken = token;
+
+    const map = new mapboxgl.Map({
+      container: containerRef.current as HTMLElement,
+      style: "mapbox://styles/mapbox/standard",
+      center: center as LngLatLike,
+      zoom: 17.6,
+      pitch: 60,
+      bearing: -20,
+      antialias: true,
+      cooperativeGestures: true,
+    });
+    mapRef.current = map;
+    try { (window as any).__debugMap = map; } catch {}
+
+    map.on("load", () => {
+      try {
+        if (!map.getSource("units")) map.addSource("units", { type: "geojson", data: emptyFeatureCollection as any });
+        if (!map.getSource("hover-unit")) map.addSource("hover-unit", { type: "geojson", data: emptyFeatureCollection as any });
+        if (!map.getSource("hover-edge")) map.addSource("hover-edge", { type: "geojson", data: emptyFeatureCollection as any });
+        if (!map.getSource("balconies")) map.addSource("balconies", { type: "geojson", data: emptyFeatureCollection as any });
+        if (!map.getSource("terraces")) map.addSource("terraces", { type: "geojson", data: emptyFeatureCollection as any });
+        if (!map.getSource("street-glass")) map.addSource("street-glass", { type: "geojson", data: emptyFeatureCollection as any });
+
+        if (!map.getLayer("units-fill")) {
+          map.addLayer({
+            id: "units-fill",
+            type: "fill-extrusion",
+            source: "units",
+            paint: {
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0.98,
+            },
+          } as any);
+        }
+
+        try {
+          if (!map.getLayer(STREET_GLASS_TEXTURE_LAYER_ID)) {
+            const handle = createStreetGlassTexturedLayer([]);
+            streetGlassLayerRef.current = handle;
+            map.addLayer(handle.layer);
+          }
+        } catch {}
+
+        if (!map.getLayer("street-glass-fill")) {
+          map.addLayer({
+            id: "street-glass-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass"],
+            paint: {
+              "fill-extrusion-color": FACADE_GLASS_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 0,
+              "fill-extrusion-vertical-gradient": false,
+            },
+          } as any);
+        }
+
+        if (!map.getLayer("street-glass-beam-fill")) {
+          map.addLayer({
+            id: "street-glass-beam-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass-beam"],
+            paint: {
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 1,
+              "fill-extrusion-vertical-gradient": false,
+            },
+          } as any);
+        }
+
+        if (!map.getLayer("street-glass-top-beam-fill")) {
+          map.addLayer({
+            id: "street-glass-top-beam-fill",
+            type: "fill-extrusion",
+            source: "street-glass",
+            filter: ["==", ["get", "kind"], "street-glass-top-beam"],
+            paint: {
+              "fill-extrusion-color": BUILDING_BASE_COLOR,
+              "fill-extrusion-height": ["get", "height"],
+              "fill-extrusion-base": ["get", "min_height"],
+              "fill-extrusion-opacity": 1,
+              "fill-extrusion-vertical-gradient": false,
+            },
+          } as any);
+        }
+      } catch {}
+
+      setReady(true);
+    });
+
+    return () => {
+      try { streetGlassLayerRef.current?.dispose(); } catch {}
+      streetGlassLayerRef.current = null;
+      try { map.remove(); } catch {}
+      mapRef.current = null;
+    };
+  }, [token, center]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const map = mapRef.current;
+    if (!map) return;
+
+    const source = map.getSource("balconies") as GeoJSONSource | undefined;
+    if (!source) return;
+    const data = makeOutdoorFeatureCollection(balconyFeatures, unitsTransform, { useRaw: useRawUnits, mode: "balcony" });
+    try { console.info("MapboxScene: updating balcony source", { features: data.features?.length ?? 0 }); } catch {}
+    source.setData(data as any);
+  }, [balconyFeatures, unitsTransform, useRawUnits, ready]);
+  useEffect(() => {
+    if (!ready) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource("terraces") as GeoJSONSource | undefined;
+    if (!source) return;
+    const data = makeOutdoorFeatureCollection(terraceFeatures, unitsTransform, { useRaw: useRawUnits, mode: "terrace" });
+    try { console.info("MapboxScene: updating terrace source", { features: data.features?.length ?? 0 }); } catch {}
+    source.setData(data as any);
+    setTerraceGeojson(data as GeoJSON.FeatureCollection);
+  }, [terraceFeatures, unitsTransform, useRawUnits, ready]);
+
+  useEffect(() => {
+    if (!unitsGeojson || !terraceGeojson) {
+      setStreetGlassGeojson(emptyFeatureCollection);
+      return;
+    }
+    const glass = makeStreetGlassFeatureCollection(unitsGeojson, terraceGeojson);
+    setStreetGlassGeojson(glass);
+  }, [unitsGeojson, terraceGeojson]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource("street-glass") as GeoJSONSource | undefined;
+    if (!source) return;
+    source.setData(streetGlassGeojson as any);
+    if (streetGlassLayerRef.current) {
+      streetGlassLayerRef.current.update(streetGlassGeojson.features as any);
+    }
+  }, [streetGlassGeojson, ready]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const filters: any[] = ["all"]; // базовый фильтр для слоя
+    if (filter.onlyAvailable) filters.push(["==", ["get", "status"], "available"]);
+    if (filter.rooms) filters.push(["==", ["get", "rooms"], filter.rooms]);
+    if (filter.hoverFloor) filters.push(["==", ["get", "floor"], filter.hoverFloor]);
+    try {
+      map.setFilter("units-fill", filters as any);
+    } catch {}
+  }, [filter]);
+
+  if (!token) {
+    return (
+      <div className="relative w-full max-w-[1100px] mx-auto rounded-xl overflow-hidden ring-1 ring-border bg-surface p-6 text-sm text-muted">
+        Добавьте NEXT_PUBLIC_MAPBOX_TOKEN в .env.local, чтобы отобразить карту с окружением.
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full max-w-[1100px] mx-auto rounded-xl overflow-hidden ring-1 ring-border" style={{ height: "68vh" }}>
+      <div ref={containerRef} className="w-full h-full" />
+      <div ref={tipRef} className="absolute pointer-events-none bg-[#111] text-white text-xs px-2 py-1 rounded" style={{ display: "none" }} />
+    </div>
+  );
+}
+
+// Scale polygon (lng,lat points) from centroid by factor (positive = outward)
+function scalePolygon(pts: [number, number][], factor: number) {
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  return pts.map(p => {
+    return [cx + (p[0] - cx) * (1 + factor), cy + (p[1] - cy) * (1 + factor)] as [number, number];
+  });
+}
+
+function ensureClosedRing(ring: [number, number][]): [number, number][] {
+  if (!ring.length) return ring;
+  const closed = [...ring];
+  const first = closed[0];
+  const last = closed[closed.length - 1];
+  if (last[0] !== first[0] || last[1] !== first[1]) {
+    closed.push([first[0], first[1]]);
+  }
+  return closed;
+}
+
+function createRailGeometry(geometry: any, insetScale: number): GeoJSON.MultiPolygon | null {
+  if (!geometry || !Number.isFinite(insetScale)) return null;
+  const buildStrips = (rings: number[][][]): number[][][][] => {
+    if (!Array.isArray(rings) || !rings.length) return [];
+    const normalizedOuter = normalizeRing(rings[0]);
+    if (!normalizedOuter || normalizedOuter.length < 4) return [];
+    const outer = normalizedOuter.slice(0, normalizedOuter.length - 1);
+    const inner = scalePolygon(outer, insetScale);
+    if (!inner.length || inner.length !== outer.length) return [];
+    const strips: number[][][][] = [];
+    for (let i = 0; i < outer.length; i++) {
+      const next = (i + 1) % outer.length;
+      const poly = ensureClosedRing([
+        outer[i] as [number, number],
+        outer[next] as [number, number],
+        inner[next] as [number, number],
+        inner[i] as [number, number],
+      ]);
+      strips.push([poly]);
+    }
+    return strips;
+  };
+  if (geometry.type === "Polygon") {
+    const strips = buildStrips(geometry.coordinates as number[][][]);
+    return strips.length ? { type: "MultiPolygon", coordinates: strips } : null;
+  }
+  if (geometry.type === "MultiPolygon") {
+    const strips = (geometry.coordinates as number[][][][]).flatMap((poly) => buildStrips(poly));
+    return strips.length ? { type: "MultiPolygon", coordinates: strips } : null;
+  }
+  return null;
+}
+
+function filterRailGeometryToOuter(
+  geometry: GeoJSON.MultiPolygon,
+  center: [number, number],
+  shortAxis: [number, number],
+  outerSign: number
+): GeoJSON.MultiPolygon | null {
+  const filtered = (geometry.coordinates as number[][][][]).filter((poly) => {
+    const ring = poly[0];
+    if (!ring?.length) return false;
+    const rel = [ring[0][0] - center[0], ring[0][1] - center[1]];
+    const proj = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+    return Math.sign(proj || outerSign) === outerSign;
+  });
+  return filtered.length ? { type: "MultiPolygon", coordinates: filtered } : null;
+}
+
+function determineOuterSign(
+  points: [number, number][],
+  center: [number, number],
+  shortAxis: [number, number]
+): number | null {
+  if (!points.length) return null;
+  let maxProj = 0;
+  points.forEach((pt) => {
+    const rel: [number, number] = [pt[0] - center[0], pt[1] - center[1]];
+    const proj = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+    if (Math.abs(proj) > Math.abs(maxProj)) {
+      maxProj = proj;
+    }
+  });
+  if (maxProj === 0) return null;
+  return Math.sign(maxProj);
+}
+
+function getPrimaryRing(geometry: any): [number, number][] | null {
+  const trimDuplicate = (ring: [number, number][]) => {
+    if (!ring.length) return ring;
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first && last && first[0] === last[0] && first[1] === last[1]) {
+      return ring.slice(0, ring.length - 1);
+    }
+    return ring;
+  };
+  if (geometry?.type === "Polygon") {
+    const normalized = normalizeRing((geometry.coordinates?.[0] as number[][]) || []);
+    return normalized ? trimDuplicate(normalized) : null;
+  }
+  if (geometry?.type === "MultiPolygon") {
+    let best: [number, number][] | null = null;
+    let bestArea = -Infinity;
+    (geometry.coordinates as number[][][][])?.forEach((poly) => {
+      if (!Array.isArray(poly) || !poly.length) return;
+      const normalized = normalizeRing(poly[0]);
+      if (!normalized) return;
+      const trimmed = trimDuplicate(normalized);
+      const area = Math.abs(polygonArea(trimmed));
+      if (area > bestArea) {
+        bestArea = area;
+        best = trimmed;
+      }
+    });
+    return best;
+  }
+  return null;
+}
+
+function polygonArea(points: [number, number][]): number {
+  if (!points.length) return 0;
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i][0] * points[j][1] - points[j][0] * points[i][1];
+  }
+  return area / 2;
+}
+
+function estimatePostSize(points: [number, number][]): number {
+  if (!points.length) return BALCONY_POST_MIN_SIZE;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  points.forEach(([x, y]) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  });
+  const span = Math.max(maxX - minX, maxY - minY);
+  const size = Math.max(span * BALCONY_POST_SIZE_FACTOR, BALCONY_POST_MIN_SIZE);
+  return size || BALCONY_POST_MIN_SIZE;
+}
+
+function filterCornerPoints(points: [number, number][]): [number, number][] {
+  if (points.length <= 4) return points;
+  const corners: [number, number][] = [];
+  const len = points.length;
+  const maxCorners = Math.min(6, len);
+  const minDot = Math.cos((130 * Math.PI) / 180); // require > ~50° turn
+
+  const addIfFar = (pt: [number, number]) => {
+    const minDist = estimatePostSize(points) * 0.6;
+    const farEnough = corners.every((existing) => distance(existing, pt) > minDist);
+    if (farEnough) corners.push(pt);
+  };
+
+  for (let i = 0; i < len && corners.length < maxCorners; i++) {
+    const prev = points[(i - 1 + len) % len];
+    const curr = points[i];
+    const next = points[(i + 1) % len];
+    const v1 = normalizeVector([prev[0] - curr[0], prev[1] - curr[1]]);
+    const v2 = normalizeVector([next[0] - curr[0], next[1] - curr[1]]);
+    const dot = v1[0] * v2[0] + v1[1] * v2[1];
+    if (!Number.isFinite(dot) || dot > minDot) continue;
+    addIfFar(curr);
+  }
+
+  if (!corners.length) {
+    // fallback: take every nth vertex
+    for (let i = 0; i < len; i += Math.ceil(len / 4)) {
+      corners.push(points[i]);
+    }
+  }
+  return corners.slice(0, 6);
+}
+
+function distance(a: [number, number], b: [number, number]): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1]);
+}
+
+function movePointTowards(
+  from: [number, number],
+  to: [number, number],
+  dist: number
+): [number, number] {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const t = Math.min(dist / len, 1);
+  return [from[0] + dx * t, from[1] + dy * t];
+}
+
+function createPostPolygon(
+  center: [number, number],
+  size: number
+): [number, number][] | null {
+  if (!center) return null;
+  const half = Math.max(size / 2, BALCONY_POST_MIN_SIZE);
+  const ring: [number, number][] = [
+    [center[0] - half, center[1] - half],
+    [center[0] + half, center[1] - half],
+    [center[0] + half, center[1] + half],
+    [center[0] - half, center[1] + half],
+  ];
+  return ensureClosedRing(ring);
+}
+
+function makeFacadeFeatureCollection(quad: [number, number][], floors: number) {
+  const features: GeoJSON.Feature[] = [];
+  // base facade: one band per floor
+  for (let f = 1; f <= floors; f++) {
+    const band = scalePolygon(quad, 0); // same footprint
+    const min_h = (f - 1) * FLOOR_HEIGHT_M + 0.005;
+    const h = f * FLOOR_HEIGHT_M - 0.005;
+    features.push({ type: 'Feature', properties: { floor: f, min_height: min_h, height: h, type: 'facade' }, geometry: { type: 'Polygon', coordinates: [band.concat([band[0]])] } } as any);
+  }
+
+  // balconies: slightly expanded footprint, thinner slab at floor top
+  const balconyPoly = scalePolygon(quad, 0.03);
+  for (let f = 1; f <= floors; f++) {
+    const slabTop = f * FLOOR_HEIGHT_M - 0.02;
+    const slabBase = slabTop - 0.18; // balcony thickness ~0.18m
+    features.push({ type: 'Feature', properties: { floor: f, min_height: slabBase, height: slabTop, type: 'balcony' }, geometry: { type: 'Polygon', coordinates: [balconyPoly.concat([balconyPoly[0]])] } } as any);
+  }
+
+  // glass panels: inset smaller polygon to simulate windows
+  const glassPoly = scalePolygon(quad, -0.06);
+  for (let f = 1; f <= floors; f++) {
+    const min_h = (f - 1) * FLOOR_HEIGHT_M + 0.15;
+    const h = f * FLOOR_HEIGHT_M - 0.15;
+    features.push({ type: 'Feature', properties: { floor: f, min_height: min_h, height: h, type: 'glass' }, geometry: { type: 'Polygon', coordinates: [glassPoly.concat([glassPoly[0]])] } } as any);
+  }
+
+  return { type: 'FeatureCollection', features } as GeoJSON.FeatureCollection;
+}
