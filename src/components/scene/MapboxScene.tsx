@@ -1,4 +1,5 @@
-"use client";
+      "use client";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -45,8 +46,18 @@ const STREET_CROSS_WINDOW_INSET_FACTOR = 0.05;
 const STREET_CROSS_DEPTH_CLEARANCE_FACTOR = 0.35;
 
 const STREET_CROSS_HALF_HEIGHT = 0.08;
-
-const STREET_GLASS_TARGET_FLOORS = [4, 3];
+const FLOOR5_LEFT_PANORAMA_BAND = 0.29;
+const FLOOR5_FRONT_RIGHT_BAND = 1 / 3;
+const FLOOR5_PERP_WINDOW_BAND = 1 / 3;
+const FLOOR5_FRONT_ASPECT_RATIO = 0.85;
+const FLOOR5_EDGE_BLEND = 0.04;
+const STREET_CORNER_BEAM_WIDTH_FACTOR = 0.08;
+const STREET_CORNER_BEAM_DEPTH_FACTOR = 0.12;
+const FLOOR5_RELAXED_FACING_COS = 0.4;
+const FLOOR5_SIDE_WINDOW_BAND = 1 / 3;
+const FLOOR5_FRONT_ALIGNMENT = 0.72;
+const FLOOR5_SIDE_ALIGNMENT = 0.6;
+const STREET_GLASS_TARGET_FLOORS = [5, 4, 3, 2];
 
 const BALCONY_FALLBACK: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
@@ -435,12 +446,12 @@ function makeStreetGlassFeatureCollection(
     const ringPoints = closedRing.slice(0, -1);
     if (!ringPoints.length) return;
     const floorCenter = centroidOfPolygon(ringPoints);
-
     let dirVec: [number, number] | null = null;
     const terraceFeature = terraceFc?.features.find((feature) => {
       const props = feature.properties as any;
       return props?.kind === "terrace-floor" && Number(props?.floor) === floor;
     });
+
     if (terraceFeature) {
       const terracePoints = collectGeometryPoints(terraceFeature.geometry);
       if (terracePoints.length) {
@@ -449,7 +460,7 @@ function makeStreetGlassFeatureCollection(
           terraceCenter[0] - floorCenter[0],
           terraceCenter[1] - floorCenter[1],
         ];
-        const dirLen = Math.hypot(dirVecRaw[0], dirVecRaw[1]);
+        const dirLen = Math.hypot(dirVecRaw[0], dirVecRaw[1]) || 1;
         if (dirLen > 0) {
           dirVec = [dirVecRaw[0] / dirLen, dirVecRaw[1] / dirLen];
           fallbackDir = dirVec;
@@ -461,14 +472,13 @@ function makeStreetGlassFeatureCollection(
     if (!dirVec) return;
 
     const sideAxis: [number, number] = [-dirVec[1], dirVec[0]];
-    const dirAxis: [number, number] = [dirVec[0], dirVec[1]];
     const normalize = (vec: [number, number]) => {
       const len = Math.hypot(vec[0], vec[1]) || 1;
       return [vec[0] / len, vec[1] / len] as [number, number];
     };
     const secondaryAxis = normalize([
-      sideAxis[0] * 0.65 + dirAxis[0] * 0.35,
-      sideAxis[1] * 0.65 + dirAxis[1] * 0.35,
+      sideAxis[0] * 0.65 + dirVec[0] * 0.35,
+      sideAxis[1] * 0.65 + dirVec[1] * 0.35,
     ]);
     const pointFromSD = (s: number, d: number): [number, number] => [
       floorCenter[0] + sideAxis[0] * s + dirVec[0] * d,
@@ -494,56 +504,97 @@ function makeStreetGlassFeatureCollection(
     const shellGeom = createRailGeometry(refFeature.geometry as any, STREET_WALL_STRIP_SCALE);
     if (!shellGeom) return;
 
+    const recordExtreme = (
+      pts: [number, number][],
+      projFunc: (pt: [number, number]) => number
+    ) => {
+      let minProj = Number.POSITIVE_INFINITY;
+      let maxProj = Number.NEGATIVE_INFINITY;
+      let minPoints: [number, number][] = [];
+      let maxPoints: [number, number][] = [];
+      const EPS = 1e-8;
+      pts.forEach((pt) => {
+        const proj = projFunc(pt);
+        if (proj < minProj - EPS) {
+          minProj = proj;
+          minPoints = [pt];
+        } else if (Math.abs(proj - minProj) <= EPS) {
+          minPoints.push(pt);
+        }
+        if (proj > maxProj + EPS) {
+          maxProj = proj;
+          maxPoints = [pt];
+        } else if (Math.abs(proj - maxProj) <= EPS) {
+          maxPoints.push(pt);
+        }
+      });
+      return { minPoints, maxPoints, minProj, maxProj };
+    };
+
+    let floor5MinFrontSideSpan = Number.POSITIVE_INFINITY;
+    if (floor === 5) {
+      (shellGeom.coordinates || []).forEach((poly) => {
+        if (!poly?.[0]) return;
+        const ring = poly[0];
+        if (!Array.isArray(ring) || ring.length < 4) return;
+        const withoutClose = ring
+          .slice(0, -1)
+          .map((pt: number[]) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+        if (!withoutClose.length) return;
+        const centroid = centroidOfPolygon(withoutClose);
+        const rel: [number, number] = [centroid[0] - floorCenter[0], centroid[1] - floorCenter[1]];
+        const relLen = Math.hypot(rel[0], rel[1]) || 1;
+        const relUnit: [number, number] = [rel[0] / relLen, rel[1] / relLen];
+        const facingDir = relUnit[0] * dirVec[0] + relUnit[1] * dirVec[1];
+        if (facingDir < FLOOR5_RELAXED_FACING_COS) return;
+
+        const sideExtremes = recordExtreme(withoutClose, (pt) => {
+          const relPt: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+          return relPt[0] * sideAxis[0] + relPt[1] * sideAxis[1];
+        });
+        const dirExtremes = recordExtreme(withoutClose, (pt) => {
+          const relPt: [number, number] = [pt[0] - floorCenter[0], pt[1] - floorCenter[1]];
+          return relPt[0] * dirVec[0] + relPt[1] * dirVec[1];
+        });
+
+        const ringSideSpan = sideExtremes.maxProj - sideExtremes.minProj;
+        const ringDepthSpan = dirExtremes.maxProj - dirExtremes.minProj;
+        const isFrontWallSection =
+          ringSideSpan > 0 && ringDepthSpan > 0 && ringSideSpan >= ringDepthSpan * FLOOR5_FRONT_ASPECT_RATIO;
+
+        if (isFrontWallSection && ringSideSpan < floor5MinFrontSideSpan) {
+          floor5MinFrontSideSpan = ringSideSpan;
+        }
+      });
+    }
+
     (shellGeom.coordinates || []).forEach((poly, idx) => {
       if (!poly?.[0]) return;
       const ring = poly[0];
       if (!Array.isArray(ring) || ring.length < 4) return;
+
       const withoutClose = ring.slice(0, -1).map((pt: number[]) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+
       if (!withoutClose.length) return;
       const centroid = centroidOfPolygon(withoutClose);
       const rel: [number, number] = [centroid[0] - floorCenter[0], centroid[1] - floorCenter[1]];
       const relLen = Math.hypot(rel[0], rel[1]) || 1;
       const dot = rel[0] * dirVec[0] + rel[1] * dirVec[1];
       const cosTheta = dot / relLen;
-      if (cosTheta < 0.92) return;
-      const glassFeature: GeoJSON.Feature = {
-        type: "Feature",
-        id: `street-glass-${floor}-${idx}`,
-        properties: {
-          floor,
-          min_height: baseMin,
-          height: baseMax,
-          kind: "street-glass",
-        },
-        geometry: { type: "Polygon", coordinates: [ring] },
-      };
-      features.push(glassFeature);
-
-      const recordExtreme = (
-        pts: [number, number][],
-        projFunc: (pt: [number, number]) => number
-      ) => {
-        let minProj = Number.POSITIVE_INFINITY;
-        let maxProj = Number.NEGATIVE_INFINITY;
-        let minPoints: [number, number][] = [];
-        let maxPoints: [number, number][] = [];
-        const EPS = 1e-8;
-        pts.forEach((pt) => {
-          const proj = projFunc(pt);
-          if (proj < minProj - EPS) {
-            minProj = proj;
-            minPoints = [pt];
-          } else if (Math.abs(proj - minProj) <= EPS) {
-            minPoints.push(pt);
-          }
-          if (proj > maxProj + EPS) {
-            maxProj = proj;
-            maxPoints = [pt];
-          } else if (Math.abs(proj - maxProj) <= EPS) {
-            maxPoints.push(pt);
-          }
-        });
-        return { minPoints, maxPoints, minProj, maxProj };
+      if (floor !== 5 && cosTheta < 0.92) return;
+      const pushGlassFeature = (coords: number[][], suffix = "full") => {
+        if (!coords || coords.length < 4) return;
+        features.push({
+          type: "Feature",
+          id: `street-glass-${floor}-${idx}-${suffix}`,
+          properties: {
+            floor,
+            min_height: baseMin,
+            height: baseMax,
+            kind: "street-glass",
+          },
+          geometry: { type: "Polygon", coordinates: [coords] },
+        } as GeoJSON.Feature);
       };
 
       const sideExtremes = recordExtreme(withoutClose, (pt) => {
@@ -582,6 +633,179 @@ function makeStreetGlassFeatureCollection(
         Math.max(spanBounds.maxX - spanBounds.minX, spanBounds.maxY - spanBounds.minY) || 0.00001;
       const beamSize = Math.max(span * STREET_BEAM_SIZE_FACTOR, STREET_BEAM_MIN_SIZE);
       const beamInset = Math.min(span * 0.02, beamSize * 2);
+
+      if (floor === 5) {
+        const ringSideSpan = sideExtremes.maxProj - sideExtremes.minProj;
+        const ringDepthSpan = dirExtremes.maxProj - dirExtremes.minProj;
+        const relUnit: [number, number] = [rel[0] / relLen, rel[1] / relLen];
+        const facingDir = relUnit[0] * dirVec[0] + relUnit[1] * dirVec[1];
+
+        const isFrontWallSection =
+          ringSideSpan > 0 && ringDepthSpan > 0 && ringSideSpan >= ringDepthSpan * FLOOR5_FRONT_ASPECT_RATIO;
+
+        if (isFrontWallSection && facingDir >= FLOOR5_RELAXED_FACING_COS) {
+          const isSmallFrontWall =
+            Number.isFinite(floor5MinFrontSideSpan) &&
+            floor5MinFrontSideSpan < Number.POSITIVE_INFINITY &&
+            ringSideSpan <= floor5MinFrontSideSpan * 1.05;
+
+          if (isSmallFrontWall) {
+            pushGlassFeature(ring, "front-full");
+
+            const ringPts = ring.slice(0, -1).map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+            if (ringPts.length) {
+              const sideVals = ringPts.map(
+                (pt) => (pt[0] - floorCenter[0]) * sideAxis[0] + (pt[1] - floorCenter[1]) * sideAxis[1]
+              );
+              const depthVals = ringPts.map(
+                (pt) => (pt[0] - floorCenter[0]) * dirVec[0] + (pt[1] - floorCenter[1]) * dirVec[1]
+              );
+              const frontSideMin = Math.min(...sideVals);
+              const frontDepthMax = Math.max(...depthVals);
+              const cornerWidth = Math.max(ringSideSpan * STREET_CORNER_BEAM_WIDTH_FACTOR, beamSize * 0.8) * 2.24;
+              const cornerDepth = Math.max(ringDepthSpan * STREET_CORNER_BEAM_DEPTH_FACTOR, beamSize * 0.6);
+              const cornerRect = rectFromSD(
+                frontSideMin + cornerWidth / 2,
+                frontDepthMax - cornerDepth / 2,
+                cornerWidth / 2,
+                cornerDepth / 2
+              );
+              if (cornerRect) {
+                features.push({
+                  type: "Feature",
+                  id: `street-glass-corner-beam-${floor}-${idx}-full`,
+                  properties: {
+                    floor,
+                    min_height: baseMin,
+                    height: baseMax,
+                    kind: "street-glass-beam",
+                  },
+                  geometry: { type: "Polygon", coordinates: [cornerRect] },
+                } as GeoJSON.Feature);
+              }
+
+              const topThickness = beamSize * STREET_TOP_BEAM_THICKNESS_FACTOR;
+              const ringCenterLocal = centroidOfPolygon(ringPts);
+
+              const pickWallAxis = (): [number, number] | null => {
+                if (ringPts.length < 3) return null;
+                const e0: [number, number] = [ringPts[1][0] - ringPts[0][0], ringPts[1][1] - ringPts[0][1]];
+                const e1: [number, number] = [ringPts[2][0] - ringPts[1][0], ringPts[2][1] - ringPts[1][1]];
+                const l0 = Math.hypot(e0[0], e0[1]);
+                const l1 = Math.hypot(e1[0], e1[1]);
+                const v = (l1 > l0 ? e1 : e0) as [number, number];
+                const len = Math.hypot(v[0], v[1]);
+                if (!(len > 1e-12)) return null;
+                return [v[0] / len, v[1] / len];
+              };
+
+              const wallAxis = pickWallAxis();
+              let topBeamRing: [number, number][] | null = null;
+              if (!wallAxis) {
+                const leftS = sideExtremes.minProj;
+                const rightS = sideExtremes.maxProj;
+                const outerD = dirExtremes.maxProj;
+                const innerD = dirExtremes.maxProj - topThickness;
+                topBeamRing = ensureClosedRing([
+                  pointFromSD(leftS, outerD),
+                  pointFromSD(rightS, outerD),
+                  pointFromSD(rightS, innerD),
+                  pointFromSD(leftS, innerD),
+                ]);
+              } else {
+                let outAxis: [number, number] = [-wallAxis[1], wallAxis[0]];
+                if (outAxis[0] * dirVec[0] + outAxis[1] * dirVec[1] < 0) outAxis = [-outAxis[0], -outAxis[1]];
+
+                const projectS = (pt: [number, number]) => {
+                  const relPt: [number, number] = [pt[0] - ringCenterLocal[0], pt[1] - ringCenterLocal[1]];
+                  return relPt[0] * wallAxis[0] + relPt[1] * wallAxis[1];
+                };
+                const projectD = (pt: [number, number]) => {
+                  const relPt: [number, number] = [pt[0] - ringCenterLocal[0], pt[1] - ringCenterLocal[1]];
+                  return relPt[0] * outAxis[0] + relPt[1] * outAxis[1];
+                };
+
+                const sExt = recordExtreme(ringPts, projectS);
+                const dExt = recordExtreme(ringPts, projectD);
+                const leftS = sExt.minProj;
+                const rightS = sExt.maxProj;
+                const outerD = dExt.maxProj;
+                const innerD = outerD - topThickness;
+                const pointFromLocal = (s: number, d: number): [number, number] => [
+                  ringCenterLocal[0] + wallAxis[0] * s + outAxis[0] * d,
+                  ringCenterLocal[1] + wallAxis[1] * s + outAxis[1] * d,
+                ];
+                topBeamRing = ensureClosedRing([
+                  pointFromLocal(leftS, outerD),
+                  pointFromLocal(rightS, outerD),
+                  pointFromLocal(rightS, innerD),
+                  pointFromLocal(leftS, innerD),
+                ]);
+              }
+
+              if (topBeamRing && topBeamRing.length >= 4) {
+                features.push({
+                  type: "Feature",
+                  id: `street-glass-top-beam-${floor}-${idx}-full`,
+                  properties: {
+                    floor,
+                    min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
+                    height: baseMax,
+                    kind: "street-glass-top-beam",
+                  },
+                  geometry: { type: "Polygon", coordinates: [topBeamRing] },
+                } as GeoJSON.Feature);
+              }
+            }
+          } else {
+            const bandWidth = Math.max(ringSideSpan * FLOOR5_FRONT_RIGHT_BAND, ringSideSpan * 0.1);
+            const blend = ringSideSpan * FLOOR5_EDGE_BLEND;
+
+            const threshold = sideExtremes.maxProj - bandWidth - blend;
+            const clippedRing = clipRingByAxisThreshold(ring, floorCenter, sideAxis, threshold, true);
+            if (clippedRing && clippedRing.length >= 4) {
+              pushGlassFeature(clippedRing, "front");
+
+              const ringPts = clippedRing.slice(0, -1).map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number]);
+              if (ringPts.length) {
+                const sideVals = ringPts.map(
+                  (pt) => (pt[0] - floorCenter[0]) * sideAxis[0] + (pt[1] - floorCenter[1]) * sideAxis[1]
+                );
+                const depthVals = ringPts.map(
+                  (pt) => (pt[0] - floorCenter[0]) * dirVec[0] + (pt[1] - floorCenter[1]) * dirVec[1]
+                );
+                const frontSideMax = Math.max(...sideVals);
+                const frontDepthMin = Math.min(...depthVals);
+                const cornerWidth = Math.max(ringSideSpan * STREET_CORNER_BEAM_WIDTH_FACTOR, beamSize * 0.8);
+                const cornerDepth = Math.max(ringDepthSpan * STREET_CORNER_BEAM_DEPTH_FACTOR, beamSize * 0.6);
+                const cornerRect = rectFromSD(
+                  frontSideMax - cornerWidth / 2,
+                  frontDepthMin + cornerDepth / 2,
+                  cornerWidth / 2,
+                  cornerDepth / 2
+                );
+                if (cornerRect) {
+                  features.push({
+                    type: "Feature",
+                    id: `street-glass-corner-beam-${floor}-${idx}`,
+                    properties: {
+                      floor,
+                      min_height: baseMin,
+                      height: baseMax,
+                      kind: "street-glass-beam",
+                    },
+                    geometry: { type: "Polygon", coordinates: [cornerRect] },
+                  } as GeoJSON.Feature);
+                }
+              }
+            }
+          }
+        }
+
+        return;
+      }
+
+      pushGlassFeature(ring);
 
       const beamContactPoints: [number, number][] = [];
       const beamCenters: { center: [number, number]; side: number }[] = [];
@@ -714,18 +938,23 @@ function makeStreetGlassFeatureCollection(
             })()
           : null;
 
-      if (
-        floor === 3 &&
+      const spanBasisReady =
         spanBasis &&
-        finalOrderedCenters.length >= 4 &&
         Number.isFinite(spanBasis.depthExtremes.maxProj) &&
         Number.isFinite(spanBasis.depthExtremes.minProj) &&
         Number.isFinite(spanBasis.spanExtremes.minProj) &&
-        Number.isFinite(spanBasis.spanExtremes.maxProj) &&
-        spanBasis.spanExtremes.maxProj - spanBasis.spanExtremes.minProj > 0
+        Number.isFinite(spanBasis.spanExtremes.maxProj)
+          ? spanBasis
+          : null;
+
+      if (
+        spanBasisReady &&
+        (floor === 2 || floor === 3) &&
+        finalOrderedCenters.length >= 4 &&
+        spanBasisReady.spanExtremes.maxProj - spanBasisReady.spanExtremes.minProj > 0
       ) {
         const availableDepth = Math.max(
-          spanBasis.depthExtremes.maxProj - spanBasis.depthExtremes.minProj,
+          spanBasisReady.depthExtremes.maxProj - spanBasisReady.depthExtremes.minProj,
           beamSize * 0.5
         );
         let crossDepthHalf = Math.max(beamSize * STREET_CROSS_DEPTH_FACTOR, beamSize * 0.2);
@@ -736,17 +965,18 @@ function makeStreetGlassFeatureCollection(
         );
         const maxInset = Math.max(availableDepth - crossDepthHalf, beamSize * 0.1);
         const crossDepthInset = Math.min(desiredInset, maxInset);
-        const minCenter = spanBasis.depthExtremes.minProj + crossDepthHalf;
-        const maxCenter = spanBasis.depthExtremes.maxProj - crossDepthHalf;
-        const desiredCenter = spanBasis.depthExtremes.maxProj - crossDepthInset - crossDepthHalf;
+        const minCenter = spanBasisReady.depthExtremes.minProj + crossDepthHalf;
+        const maxCenter = spanBasisReady.depthExtremes.maxProj - crossDepthHalf;
+        const desiredCenter =
+          spanBasisReady.depthExtremes.maxProj - crossDepthInset - crossDepthHalf;
         const crossDepthCenter = Math.max(minCenter, Math.min(desiredCenter, maxCenter));
         const verticalHalfWidth = Math.max(beamSize * STREET_CROSS_WIDTH_FACTOR, beamSize * 0.15);
 
         for (let windowIdx = 0; windowIdx < finalOrderedCenters.length - 1; windowIdx++) {
           const left = finalOrderedCenters[windowIdx];
           const right = finalOrderedCenters[windowIdx + 1];
-          const leftS = spanBasis.projectAlong(left.center, spanBasis.basisSide);
-          const rightS = spanBasis.projectAlong(right.center, spanBasis.basisSide);
+          const leftS = spanBasisReady.projectAlong(left.center, spanBasisReady.basisSide);
+          const rightS = spanBasisReady.projectAlong(right.center, spanBasisReady.basisSide);
           const windowWidth = Math.abs(rightS - leftS);
           if (!(windowWidth > beamSize * 0.4)) continue;
           const crossCenterS = (leftS + rightS) / 2;
@@ -756,7 +986,7 @@ function makeStreetGlassFeatureCollection(
             verticalHalfWidth * 0.5
           );
 
-          const verticalRing = spanBasis.rectFromBasis(
+          const verticalRing = spanBasisReady.rectFromBasis(
             crossCenterS,
             crossDepthCenter,
             verticalHalfWidth,
@@ -778,112 +1008,109 @@ function makeStreetGlassFeatureCollection(
 
           const horizontalHalfWidth = Math.max(windowWidth / 2 - windowInset, beamSize * 0.18);
           if (!(horizontalHalfWidth > 0)) continue;
-          const horizontalRing = spanBasis.rectFromBasis(
+          const horizontalRing = spanBasisReady.rectFromBasis(
             crossCenterS,
             crossDepthCenter,
             horizontalHalfWidth,
             crossDepthHalf
           );
           if (horizontalRing) {
-          const spanHeight = baseMax - baseMin;
-          const crossMid = baseMin + spanHeight / 2;
-          const halfHeight = Math.min(STREET_CROSS_HALF_HEIGHT, spanHeight / 2 - 0.01);
-          const horizontalMin = Math.max(baseMin, crossMid - halfHeight);
-          const horizontalMax = Math.min(baseMax, crossMid + halfHeight);
-          features.push({
-            type: "Feature",
-            id: `street-glass-cross-horizontal-${floor}-${idx}-${windowIdx}`,
-            properties: {
-              floor,
-              min_height: horizontalMin,
-              height: horizontalMax,
-              kind: "street-glass-cross-horizontal",
-            },
-            geometry: { type: "Polygon", coordinates: [horizontalRing] },
-          } as GeoJSON.Feature);
-        }
-      }
-    }
-
-    let topBeamPlaced = false;
-
-    if (
-      (floor === 3 || floor === 4) &&
-      spanBasis &&
-      finalOrderedCenters.length >= 2 &&
-      Number.isFinite(spanBasis.depthExtremes.maxProj) &&
-      Number.isFinite(spanBasis.depthExtremes.minProj) &&
-      Number.isFinite(spanBasis.spanExtremes.minProj) &&
-      Number.isFinite(spanBasis.spanExtremes.maxProj)
-    ) {
-      const spanWidth = spanBasis.spanExtremes.maxProj - spanBasis.spanExtremes.minProj;
-      if (spanWidth > beamSize * 0.4) {
-        const edgePadding = Math.min(Math.max(spanWidth * 0.02, beamSize * 0.3), spanWidth / 4);
-        const leftS = spanBasis.spanExtremes.minProj + edgePadding;
-        const rightS = spanBasis.spanExtremes.maxProj - edgePadding;
-        const usableWidth = rightS - leftS;
-        if (usableWidth > beamSize * 0.3) {
-          const halfWidth = usableWidth / 2;
-          const centerS = (leftS + rightS) / 2;
-          const depthOuter = spanBasis.depthExtremes.maxProj;
-          const depthInner = spanBasis.depthExtremes.minProj;
-          const depthSpan = Math.max(depthOuter - depthInner, beamSize * 0.2);
-          const halfDepth = Math.min(
-            Math.max(topThickness / 2, depthSpan * 0.25, beamSize * 0.1),
-            depthSpan / 2
-          );
-          const centerD = depthOuter - halfDepth;
-          const topBeamRing = spanBasis.rectFromBasis(centerS, centerD, halfWidth, halfDepth);
-          if (topBeamRing) {
+            const spanHeight = baseMax - baseMin;
+            const crossMid = baseMin + spanHeight / 2;
+            const halfHeight = Math.min(STREET_CROSS_HALF_HEIGHT, spanHeight / 2 - 0.01);
+            const horizontalMin = Math.max(baseMin, crossMid - halfHeight);
+            const horizontalMax = Math.min(baseMax, crossMid + halfHeight);
             features.push({
               type: "Feature",
-              id: `street-glass-top-beam-${floor}-${idx}`,
+              id: `street-glass-cross-horizontal-${floor}-${idx}-${windowIdx}`,
               properties: {
                 floor,
-                min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
-                height: baseMax,
-                kind: "street-glass-top-beam",
+                min_height: horizontalMin,
+                height: horizontalMax,
+                kind: "street-glass-cross-horizontal",
               },
-              geometry: { type: "Polygon", coordinates: [topBeamRing] },
+              geometry: { type: "Polygon", coordinates: [horizontalRing] },
             } as GeoJSON.Feature);
-            topBeamPlaced = true;
           }
         }
       }
-    }
 
-    if (
-      !topBeamPlaced &&
-      Number.isFinite(sideExtremes.minProj) &&
-      Number.isFinite(sideExtremes.maxProj) &&
-      Number.isFinite(dirExtremes.maxProj)
-    ) {
-      const sPadding = beamSize * 0.5;
-      const dThickness = topThickness;
-      const leftS = sideExtremes.minProj - sPadding;
-      const rightS = sideExtremes.maxProj + sPadding;
-      const outerD = dirExtremes.maxProj;
-      const innerD = dirExtremes.maxProj - dThickness;
-      const topBeamRing = ensureClosedRing([
-        pointFromSD(leftS, outerD),
-        pointFromSD(rightS, outerD),
-        pointFromSD(rightS, innerD),
-        pointFromSD(leftS, innerD),
-      ]);
-      if (topBeamRing && topBeamRing.length >= 4) {
-        features.push({
-          type: "Feature",
-          id: `street-glass-top-beam-${floor}-${idx}`,
-          properties: {
-            floor,
-            min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
-            height: baseMax,
-            kind: "street-glass-top-beam",
-          },
-          geometry: { type: "Polygon", coordinates: [topBeamRing] },
-        } as GeoJSON.Feature);
+      let topBeamPlaced = false;
+
+      if (
+        spanBasisReady &&
+        (floor === 2 || floor === 3 || floor === 4) &&
+        finalOrderedCenters.length >= 2
+      ) {
+        const spanWidth =
+          spanBasisReady.spanExtremes.maxProj - spanBasisReady.spanExtremes.minProj;
+        if (spanWidth > beamSize * 0.4) {
+          const edgePadding = Math.min(Math.max(spanWidth * 0.02, beamSize * 0.3), spanWidth / 4);
+          const leftS = spanBasisReady.spanExtremes.minProj + edgePadding;
+          const rightS = spanBasisReady.spanExtremes.maxProj - edgePadding;
+          const usableWidth = rightS - leftS;
+          if (usableWidth > beamSize * 0.3) {
+            const halfWidth = usableWidth / 2;
+            const centerS = (leftS + rightS) / 2;
+            const depthOuter = spanBasisReady.depthExtremes.maxProj;
+            const depthInner = spanBasisReady.depthExtremes.minProj;
+            const depthSpan = Math.max(depthOuter - depthInner, beamSize * 0.2);
+            const halfDepth = Math.min(
+              Math.max(topThickness / 2, depthSpan * 0.25, beamSize * 0.1),
+              depthSpan / 2
+            );
+            const centerD = depthOuter - halfDepth;
+            const topBeamRing = spanBasisReady.rectFromBasis(centerS, centerD, halfWidth, halfDepth);
+            if (topBeamRing) {
+              features.push({
+                type: "Feature",
+                id: `street-glass-top-beam-${floor}-${idx}`,
+                properties: {
+                  floor,
+                  min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
+                  height: baseMax,
+                  kind: "street-glass-top-beam",
+                },
+                geometry: { type: "Polygon", coordinates: [topBeamRing] },
+              } as GeoJSON.Feature);
+              topBeamPlaced = true;
+            }
+          }
+        }
       }
-    }
+
+      if (
+        !topBeamPlaced &&
+        Number.isFinite(sideExtremes.minProj) &&
+        Number.isFinite(sideExtremes.maxProj) &&
+        Number.isFinite(dirExtremes.maxProj)
+      ) {
+        const sPadding = beamSize * 0.5;
+        const dThickness = topThickness;
+        const leftS = sideExtremes.minProj - sPadding;
+        const rightS = sideExtremes.maxProj + sPadding;
+        const outerD = dirExtremes.maxProj;
+        const innerD = dirExtremes.maxProj - dThickness;
+        const topBeamRing = ensureClosedRing([
+          pointFromSD(leftS, outerD),
+          pointFromSD(rightS, outerD),
+          pointFromSD(rightS, innerD),
+          pointFromSD(leftS, innerD),
+        ]);
+        if (topBeamRing && topBeamRing.length >= 4) {
+          features.push({
+            type: "Feature",
+            id: `street-glass-top-beam-${floor}-${idx}`,
+            properties: {
+              floor,
+              min_height: Math.max(baseMax - STREET_TOP_BEAM_HEIGHT, baseMin),
+              height: baseMax,
+              kind: "street-glass-top-beam",
+            },
+            geometry: { type: "Polygon", coordinates: [topBeamRing] },
+          } as GeoJSON.Feature);
+        }
+      }
 
     });
   });
@@ -950,7 +1177,58 @@ function makeOutdoorFeatureCollection(
         id: `${idBase}-floor`,
       } as GeoJSON.Feature;
       features.push(floorFeature);
-      const railGeom = createRailGeometry(geom, TERRACE_RAIL_SCALE);
+      let railGeom = createRailGeometry(geom, TERRACE_RAIL_SCALE);
+      const primaryRing = getPrimaryRing(geom);
+      const postRing = primaryRing ? ensureClosedRing(primaryRing) : null;
+      const ringVertices = postRing ? postRing.slice(0, postRing.length - 1) : null;
+      const ringCenter = ringVertices?.length ? centroidOfPolygon(ringVertices) : null;
+      const axisBasis = ringVertices?.length ? computeAxisBasis(ringVertices) : null;
+      const longAxis = axisBasis ? axisBasis.axes[0] : null;
+      const shortAxis = axisBasis ? axisBasis.axes[1] : null;
+      const outerShortSign = ringVertices && ringCenter && shortAxis
+        ? determineOuterSign(ringVertices, ringCenter, shortAxis)
+        : null;
+      const outerLongSign = ringVertices && ringCenter && longAxis
+        ? determineOuterSign(ringVertices, ringCenter, longAxis)
+        : null;
+      const longMaxAbs = ringVertices && ringCenter && longAxis
+        ? Math.max(
+            1e-12,
+            ...ringVertices.map((pt) => {
+              const rel: [number, number] = [pt[0] - ringCenter[0], pt[1] - ringCenter[1]];
+              return Math.abs(rel[0] * longAxis[0] + rel[1] * longAxis[1]);
+            })
+          )
+        : null;
+
+      if (
+        floor !== 6 &&
+        railGeom &&
+        ringCenter &&
+        shortAxis &&
+        longAxis &&
+        outerShortSign &&
+        outerLongSign &&
+        longMaxAbs
+      ) {
+        const filteredCoords = (railGeom.coordinates as number[][][][]).filter((poly) => {
+          const ring = poly[0];
+          if (!ring?.length) return false;
+          const rel = [ring[0][0] - ringCenter[0], ring[0][1] - ringCenter[1]];
+          const projShort = rel[0] * shortAxis[0] + rel[1] * shortAxis[1];
+          const projLong = rel[0] * longAxis[0] + rel[1] * longAxis[1];
+          const shortOk = Math.sign(projShort || outerShortSign) === outerShortSign;
+          if (shortOk) return true;
+
+          const nearOuterLongEdge = Math.abs(projLong) >= longMaxAbs * 0.85;
+          const allowCornerInnerSegment = (floor === 2 || floor === 3 || floor === 4 || floor === 5) && nearOuterLongEdge;
+          return allowCornerInnerSegment;
+        });
+        if (filteredCoords.length) {
+          railGeom = { type: "MultiPolygon", coordinates: filteredCoords } as GeoJSON.MultiPolygon;
+        }
+      }
+
       if (railGeom) {
         const railFeature = {
           type: "Feature",
@@ -968,6 +1246,7 @@ function makeOutdoorFeatureCollection(
       }
       return;
     }
+
     const primaryRing = getPrimaryRing(geom);
     const postRing = primaryRing ? ensureClosedRing(primaryRing) : null;
     const ringVertices = postRing ? postRing.slice(0, postRing.length - 1) : null;
@@ -993,10 +1272,38 @@ function makeOutdoorFeatureCollection(
     features.push(balconyFloor);
     // Balcony rail
     let balconyRailGeom = createRailGeometry(geom, BALCONY_RAIL_SCALE);
-    if (balconyRailGeom && ringCenter && shortAxis && outerSign) {
-      const filtered = filterRailGeometryToOuter(balconyRailGeom, ringCenter, shortAxis, outerSign);
-      if (filtered) balconyRailGeom = filtered;
+    if (balconyRailGeom && ringCenter && ringVertices && axisBasis) {
+      const longAxis = axisBasis.axes[0];
+      const shortAxisLocal = axisBasis.axes[1];
+      const outerShortSign = determineOuterSign(ringVertices, ringCenter, shortAxisLocal);
+      if (outerShortSign) {
+        const outerLongSign = determineOuterSign(ringVertices, ringCenter, longAxis);
+        const longMaxAbs = Math.max(
+          1e-12,
+          ...ringVertices.map((pt) => {
+            const rel: [number, number] = [pt[0] - ringCenter[0], pt[1] - ringCenter[1]];
+            return Math.abs(rel[0] * longAxis[0] + rel[1] * longAxis[1]);
+          })
+        );
+        const filteredCoords = (balconyRailGeom.coordinates as number[][][][]).filter((poly) => {
+          const ring = poly[0];
+          if (!ring?.length) return false;
+          const rel = [ring[0][0] - ringCenter[0], ring[0][1] - ringCenter[1]];
+          const projShort = rel[0] * shortAxisLocal[0] + rel[1] * shortAxisLocal[1];
+          const projLong = rel[0] * longAxis[0] + rel[1] * longAxis[1];
+          const shortOk = Math.sign(projShort || outerShortSign) === outerShortSign;
+          if (shortOk) return true;
+          if (!(floor === 2 || floor === 3 || floor === 4 || floor === 5) || !outerLongSign) return false;
+          const nearOuterLongEdge = Math.abs(projLong) >= longMaxAbs * 0.85;
+          return nearOuterLongEdge;
+        });
+        const filtered = filteredCoords.length
+          ? ({ type: "MultiPolygon", coordinates: filteredCoords } as GeoJSON.MultiPolygon)
+          : null;
+        if (filtered) balconyRailGeom = filtered;
+      }
     }
+
     if (balconyRailGeom) {
       const balconyRail = {
         type: "Feature",
@@ -1962,6 +2269,46 @@ function ensureClosedRing(ring: [number, number][]): [number, number][] {
     closed.push([first[0], first[1]]);
   }
   return closed;
+}
+
+function clipRingByAxisThreshold(
+  ring: number[][],
+  center: [number, number],
+  axis: [number, number],
+  threshold: number,
+  keepGreater: boolean
+): [number, number][] | null {
+  if (!Array.isArray(ring) || ring.length < 4) return null;
+  const project = (pt: number[]) => {
+    const relX = pt[0] - center[0];
+    const relY = pt[1] - center[1];
+    return relX * axis[0] + relY * axis[1];
+  };
+
+  const isInside = (proj: number) => (keepGreater ? proj >= threshold : proj <= threshold);
+  const closed = ensureClosedRing(ring as [number, number][]);
+  const output: [number, number][] = [];
+  for (let i = 0; i < closed.length; i++) {
+    const current = closed[i];
+    const prev = closed[(i + closed.length - 1) % closed.length];
+    const currentProj = project(current);
+    const prevProj = project(prev);
+    const currentInside = isInside(currentProj);
+    const prevInside = isInside(prevProj);
+    if (currentInside !== prevInside) {
+      const denom = currentProj - prevProj;
+      if (Math.abs(denom) > 1e-9) {
+        const t = (threshold - prevProj) / denom;
+        const intersect: [number, number] = [
+          prev[0] + (current[0] - prev[0]) * t,
+          prev[1] + (current[1] - prev[1]) * t,
+        ];
+        output.push(intersect);
+      }
+    }
+    if (currentInside) output.push(current as [number, number]);
+  }
+  return output.length >= 4 ? ensureClosedRing(output) : null;
 }
 
 function createRailGeometry(geometry: any, insetScale: number): GeoJSON.MultiPolygon | null {
