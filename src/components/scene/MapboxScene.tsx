@@ -6,7 +6,6 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { PMREMGenerator } from "three/examples/jsm/cubemap/PMREMGenerator.js";
 import type * as GeoJSON from "geojson";
 
 export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
