@@ -1,13 +1,8 @@
-      "use client";
+﻿      "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl, { Map, LngLatLike, GeoJSONSource } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
-import { PMREMGenerator } from "three/examples/jsm/cubemap/PMREMGenerator.js";
-import type * as GeoJSON from "geojson";
 
 export type MapboxPickedUnit = { id: string; area: number; rooms: number } | null;
 export type MapboxSceneFilter = {
@@ -173,7 +168,7 @@ type UnitsTransform = {
   scales: [number, number];
 };
 
-// Парсинг geojson квартир
+// ╨Я╨░╤А╤Б╨╕╨╜╨│ geojson ╨║╨▓╨░╤А╤В╨╕╤А
 async function loadUnitsFromGeojson(): Promise<Unit[]> {
   const floors = Array.from({ length: TOTAL_FLOORS }, (_, i) => i + 1);
   const units: Unit[] = [];
@@ -185,7 +180,7 @@ async function loadUnitsFromGeojson(): Promise<Unit[]> {
       const geojson = await res.json();
       if (geojson && geojson.features) {
         for (const feat of geojson.features) {
-          // предполагаем, что properties содержит нужные данные
+          // ╨┐╤А╨╡╨┤╨┐╨╛╨╗╨░╨│╨░╨╡╨╝, ╤З╤В╨╛ properties ╤Б╨╛╨┤╨╡╤А╨╢╨╕╤В ╨╜╤Г╨╢╨╜╤Л╨╡ ╨┤╨░╨╜╨╜╤Л╨╡
           const props = feat.properties || {};
           units.push({
             id: props.id || `${f}-${units.length+1}`,
@@ -227,10 +222,10 @@ async function loadFloorFeatureCollection(): Promise<GeoJSON.FeatureCollection |
   return features.length ? { type: 'FeatureCollection', features } : null;
 }
 
-// Билинейная проекция UV -> lngLat на четырехугольник (контур здания)
+// ╨С╨╕╨╗╨╕╨╜╨╡╨╣╨╜╨░╤П ╨┐╤А╨╛╨╡╨║╤Ж╨╕╤П UV -> lngLat ╨╜╨░ ╤З╨╡╤В╤Л╤А╨╡╤Е╤Г╨│╨╛╨╗╤М╨╜╨╕╨║ (╨║╨╛╨╜╤В╤Г╤А ╨╖╨┤╨░╨╜╨╕╤П)
 function uvToLngLat(uv: [number, number], quad: [number, number][]) {
   const [u, v] = uv;
-  const [A, B, C, D] = quad; // по часовой
+  const [A, B, C, D] = quad; // ╨┐╨╛ ╤З╨░╤Б╨╛╨▓╨╛╨╣
   const lerp = (p: number[], q: number[], t: number) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t] as [number, number];
   const E = lerp(A, D, v);
   const F = lerp(B, C, v);
@@ -445,7 +440,7 @@ function makeStreetGlassFeatureCollection(
       (refFeature.properties as any)?.min_height ?? (floor - 1) * FLOOR_HEIGHT_M + 0.02
     );
     const baseMax = Number((refFeature.properties as any)?.height ?? floor * FLOOR_HEIGHT_M - 0.02);
-    const primaryRing = getPrimaryRing(refFeature.geometry as any);
+    const primaryRing = getPrimaryRing(refFeature.geometry);
     if (!primaryRing) return;
     const closedRing = ensureClosedRing(primaryRing);
     const ringPoints = closedRing.slice(0, -1);
@@ -1610,26 +1605,6 @@ export default function MapboxScene({
   const [balconyFeatures, setBalconyFeatures] = useState<GeoJSON.FeatureCollection | null>(BALCONY_FALLBACK);
   const [terraceFeatures, setTerraceFeatures] = useState<GeoJSON.FeatureCollection | null>(TERRACE_FALLBACK);
 
-  useEffect(() => {
-    if (!ready) return;
-    const map = mapRef.current;
-    if (!map) return;
-    const source = map.getSource("units") as GeoJSONSource | undefined;
-    if (!source) return;
-
-    let unitsSourceData: GeoJSON.FeatureCollection;
-    if (externalUnits && externalUnits.type === "FeatureCollection") {
-      unitsSourceData = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
-    } else {
-      unitsSourceData = makeUnitsFeatureCollection(
-        (Array.isArray(footprint) ? (footprint as any) : [center]) as any,
-        units
-      ) as any;
-    }
-    source.setData(unitsSourceData as any);
-    setUnitsGeojson(unitsSourceData as GeoJSON.FeatureCollection);
-  }, [ready, externalUnits, unitsTransform, useRawUnits, units, footprint, center]);
-
   // fallback UV units for demo/testing
   useEffect(() => {
     let mounted = true;
@@ -1739,6 +1714,79 @@ export default function MapboxScene({
   }, [externalUnits, footprint, useRawUnits]);
 
   useEffect(() => {
+    if (!externalUnits) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const updateUnits = () => {
+      const unitsSource = map.getSource("units") as GeoJSONSource | undefined;
+      if (!unitsSource) return;
+      try { console.info('MapboxScene: updating units source', { features: externalUnits.features?.length ?? 0, hasTransform: !!unitsTransform, useRaw: useRawUnits }); } catch {}
+      const data = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform, { useRaw: useRawUnits });
+      unitsSource.setData(data as any);
+      setUnitsGeojson(data as GeoJSON.FeatureCollection);
+      const bounds = computeFeatureCollectionBounds(data);
+      if (bounds) {
+        const pad = 0.0001;
+        const sw: [number, number] = [bounds.min[0] - pad, bounds.min[1] - pad];
+        const ne: [number, number] = [bounds.max[0] + pad, bounds.max[1] + pad];
+        try { console.info('MapboxScene: units bounds', bounds); } catch {}
+        try { map.fitBounds([sw, ne], { padding: 50, duration: 800 }); } catch {}
+      }
+    };
+    if (map.isStyleLoaded()) {
+      updateUnits();
+      return;
+    }
+    const onData = () => {
+      if (!map.isStyleLoaded()) return;
+      map.off("styledata", onData);
+      updateUnits();
+    };
+    map.on("styledata", onData);
+    return () => {
+      map.off("styledata", onData);
+    };
+  }, [unitsTransform, externalUnits, useRawUnits]);
+
+  useEffect(() => {
+    if (!externalUnits || hasCustomFootprint.current) return;
+    const derived = deriveFootprintFromUnits(externalUnits);
+    if (!derived || derived.length < 4) return;
+    setFootprint(derived);
+    const map = mapRef.current;
+    if (!map) return;
+    const updateFootprint = () => {
+      const polygonCoords = [...derived, derived[0]];
+      const footprintFeature = {
+        type: 'Feature',
+        id: 'building',
+        properties: { floors: TOTAL_FLOORS },
+        geometry: { type: 'Polygon', coordinates: [polygonCoords] }
+      } as GeoJSON.Feature;
+      const footprintSource = map.getSource("our-footprint") as GeoJSONSource | undefined;
+      if (footprintSource) {
+        footprintSource.setData(footprintFeature as any);
+      }
+      const facadeSource = map.getSource("facade") as GeoJSONSource | undefined;
+      if (facadeSource) {
+        facadeSource.setData(makeFacadeFeatureCollection(derived as any, TOTAL_FLOORS));
+      }
+    };
+    if (map.isStyleLoaded()) {
+      updateFootprint();
+      return;
+    }
+    const once = () => {
+      map.off("styledata", once);
+      updateFootprint();
+    };
+    map.on("styledata", once);
+    return () => {
+      map.off("styledata", once);
+    };
+  }, [externalUnits]);
+
+  useEffect(() => {
     if (!ready) return;
     const map = mapRef.current;
     if (!map) return;
@@ -1824,7 +1872,7 @@ export default function MapboxScene({
 
         map.on("load", () => {
           try {
-        // Наш дом: добавляем footprint и слой здания
+        // ╨Э╨░╤И ╨┤╨╛╨╝: ╨┤╨╛╨▒╨░╨▓╨╗╤П╨╡╨╝ footprint ╨╕ ╤Б╨╗╨╛╨╣ ╨╖╨┤╨░╨╜╨╕╤П
           const polygonCoords = Array.isArray(footprint) && footprint.length >= 4 ? [...footprint, footprint[0]] : null;
           if (!polygonCoords) {
             console.warn('MapboxScene: invalid footprint, falling back to generated rectangle', footprint);
@@ -1833,6 +1881,7 @@ export default function MapboxScene({
           const isValid = polygonCoords && polygonCoords.every((p: any) => Array.isArray(p) && p.length === 2 && typeof p[0] === 'number' && typeof p[1] === 'number');
           const usedPolygon = isValid ? polygonCoords : [...(typeof footprint !== 'undefined' ? footprint as any : []), (footprint as any)?.[0]];
           try { console.info('MapboxScene: using polygon coords for building footprint:', usedPolygon); } catch {}
+          
           // our footprint source (needed for transform math even without rendering)
           const FLOORS = TOTAL_FLOORS;
           if (isValid) {
@@ -1851,7 +1900,7 @@ export default function MapboxScene({
             console.info('MapboxScene: used fallback rectangle footprint', fallback);
           }
 
-          // Квартиры: добавляем source и слои (оставляем поверх фасада)
+          // ╨Ъ╨▓╨░╤А╤В╨╕╤А╤Л: ╨┤╨╛╨▒╨░╨▓╨╗╤П╨╡╨╝ source ╨╕ ╤Б╨╗╨╛╨╕ (╨╛╤Б╤В╨░╨▓╨╗╤П╨╡╨╝ ╨┐╨╛╨▓╨╡╤А╤Е ╤Д╨░╤Б╨░╨┤╨░)
           let unitsSourceData: GeoJSON.FeatureCollection;
           if (externalUnits && externalUnits.type === 'FeatureCollection') {
             unitsSourceData = makeExternalUnitsFeatureCollection(externalUnits, unitsTransform);
@@ -2076,315 +2125,6 @@ export default function MapboxScene({
             }
           });
 
-          try {
-            const quad = Array.isArray(footprint) && footprint.length >= 4 ? (footprint as [number, number][]) : null;
-            if (quad && quad.length >= 4) {
-              const PLANT_LAYER_ID = "plants-3d";
-              if (!map.getLayer(PLANT_LAYER_ID)) {
-                const plantAnchors: Array<{ uv: [number, number]; floor: number; heightOffsetM?: number; scaleM?: number; rotY?: number }> = [
-                  { uv: [0.74, 0.33], floor: 4, heightOffsetM: 1.1, scaleM: 0.9, rotY: 0.6 },
-                  { uv: [0.78, 0.40], floor: 4, heightOffsetM: 1.1, scaleM: 0.85, rotY: 0.6 },
-                  { uv: [0.62, 0.44], floor: 4, heightOffsetM: 1.1, scaleM: 0.9, rotY: 0.2 },
-                  { uv: [0.70, 0.56], floor: 5, heightOffsetM: 1.1, scaleM: 0.75, rotY: 0.8 },
-                  { uv: [0.84, 0.60], floor: 5, heightOffsetM: 1.1, scaleM: 0.75, rotY: 0.9 },
-                ];
-
-                const SHOW_PLANTS = false;
-                const SHOW_DEBUG_PLASTER_CUBE = false;
-
-                const layer: any = {
-                  id: PLANT_LAYER_ID,
-                  type: "custom",
-                  renderingMode: "3d",
-                  onAdd: (mapInstance: any, gl: WebGLRenderingContext) => {
-                    const camera = new THREE.Camera();
-                    const scene = new THREE.Scene();
-                    const renderer = new THREE.WebGLRenderer({
-                      canvas: mapInstance.getCanvas(),
-                      context: gl as any,
-                      antialias: true,
-                      alpha: true,
-                    });
-                    renderer.autoClear = false;
-
-                    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-                    renderer.toneMappingExposure = 1.15;
-                    renderer.outputColorSpace = THREE.SRGBColorSpace;
-                    (renderer as any).physicallyCorrectLights = true;
-
-                    try {
-                      const pmrem = new THREE.PMREMGenerator(renderer);
-                      pmrem.compileEquirectangularShader();
-                      const exrLoader = new EXRLoader();
-                      exrLoader.load(
-                        "/texture/docklands_01_2k.exr",
-                        (tex) => {
-                          try {
-                            tex.colorSpace = THREE.LinearSRGBColorSpace;
-                          } catch {}
-                          const env = pmrem.fromEquirectangular(tex).texture;
-                          scene.environment = env;
-                          try {
-                            tex.dispose();
-                          } catch {}
-                          try {
-                            pmrem.dispose();
-                          } catch {}
-                          mapInstance.triggerRepaint();
-                        },
-                        undefined,
-                        () => {
-                          try { pmrem.dispose(); } catch {}
-                        }
-                      );
-                    } catch {}
-
-                    const ambient = new THREE.AmbientLight(0xffffff, 0.75);
-                    scene.add(ambient);
-                    const sun = new THREE.DirectionalLight(0xffffff, 0.85);
-                    sun.position.set(20, 40, 20);
-                    scene.add(sun);
-
-                    try {
-                      const c0 = { lng: center[0], lat: center[1] };
-                      if (c0 && Number.isFinite(c0.lng) && Number.isFinite(c0.lat)) {
-                        const mc0 = (mapboxgl as any).MercatorCoordinate.fromLngLat({ lng: c0.lng, lat: c0.lat }, 0);
-                        (layer as any)._originMc = mc0;
-                        const metersToMercator0 = mc0.meterInMercatorCoordinateUnits();
-
-                        const s = metersToMercator0 * 6;
-                        const rX = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-
-                        if (SHOW_DEBUG_PLASTER_CUBE) try {
-                          const plasterLoader = new THREE.TextureLoader();
-                          const applyTexSettings = (tex: THREE.Texture, isColor: boolean) => {
-                            try {
-                              tex.colorSpace = isColor ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-                            } catch {}
-                            tex.wrapS = THREE.RepeatWrapping;
-                            tex.wrapT = THREE.RepeatWrapping;
-                            tex.repeat.set(1.6, 1.6);
-                            tex.anisotropy = 4;
-                          };
-
-                          const baseColor = plasterLoader.load(
-                            "/texture/plaster/2K-plasteR_8-diffuse.png",
-                            (t) => applyTexSettings(t, true)
-                          );
-                          const normal = plasterLoader.load(
-                            "/texture/plaster/2K-plasteR_8-normal.jpg",
-                            (t) => applyTexSettings(t, false)
-                          );
-                          const displacement = plasterLoader.load(
-                            "/texture/plaster/2K-plasteR_8-displacement.jpg",
-                            (t) => applyTexSettings(t, false)
-                          );
-                          const specular = plasterLoader.load(
-                            "/texture/plaster/2K-plasteR_8-specular.png",
-                            (t) => applyTexSettings(t, false)
-                          );
-
-                          applyTexSettings(baseColor, true);
-                          applyTexSettings(normal, false);
-                          applyTexSettings(displacement, false);
-                          applyTexSettings(specular, false);
-
-                          const plasterMat = new THREE.MeshPhysicalMaterial({
-                            map: baseColor,
-                            normalMap: normal,
-                            displacementMap: displacement,
-                            displacementScale: 0.08,
-                            roughness: 0.95,
-                            metalness: 0.0,
-                            specularIntensity: 0.2,
-                            specularIntensityMap: specular,
-                          });
-                          plasterMat.side = THREE.DoubleSide;
-                          plasterMat.depthTest = false;
-                          plasterMat.depthWrite = false;
-                          try {
-                            (plasterMat as any).normalScale?.set?.(1.2, 1.2);
-                          } catch {}
-
-                          const plasterCube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1, 40, 40, 40), plasterMat);
-                          plasterCube.frustumCulled = false;
-                          plasterCube.renderOrder = 1000;
-                          plasterCube.matrixAutoUpdate = false;
-
-                          const metersToMercatorUnit = metersToMercator0;
-                          const t2 = new THREE.Matrix4().makeTranslation(
-                            8 * metersToMercatorUnit,
-                            2 * metersToMercatorUnit,
-                            25 * metersToMercatorUnit
-                          );
-                          const sc2 = new THREE.Matrix4().makeScale(s, s, s);
-                          plasterCube.matrix = t2.multiply(rX).multiply(sc2);
-                          scene.add(plasterCube);
-                          mapInstance.triggerRepaint();
-                        } catch {}
-                      }
-                    } catch {}
-
-                    if (SHOW_PLANTS) {
-                      const loader = new GLTFLoader();
-
-                      loader.load(
-                        "/texture/small_tree.glb",
-                        (gltf: any) => {
-                          const base = gltf.scene;
-                          try {
-                            if (!(base as any).userData?._dbgLogged) {
-                              (base as any).userData = (base as any).userData || {};
-                              (base as any).userData._dbgLogged = true;
-                              const meshes: any[] = [];
-                              base.traverse((o: any) => {
-                                if (o && o.isMesh) {
-                                  meshes.push({ name: o.name, mat: o.material, geo: o.geometry });
-                                }
-                              });
-                              console.info(
-                                "MapboxScene plants: GLB loaded meshes=",
-                                meshes.map((m) => ({
-                                  name: m.name,
-                                  geoType: m.geo?.type,
-                                  hasPos: !!m.geo?.attributes?.position,
-                                  matType: Array.isArray(m.mat) ? m.mat.map((x: any) => x?.type) : m.mat?.type,
-                                  matName: Array.isArray(m.mat) ? m.mat.map((x: any) => x?.name) : m.mat?.name,
-                                }))
-                              );
-                            }
-                          } catch {}
-
-                          base.traverse((obj: any) => {
-                            if (!obj || !obj.isMesh) return;
-                            obj.castShadow = false;
-                            obj.receiveShadow = false;
-                            obj.frustumCulled = false;
-                            obj.renderOrder = 10;
-
-                            const materials = Array.isArray(obj.material) ? obj.material : [obj.material].filter(Boolean);
-                            materials.forEach((mat: any) => {
-                              if (!mat) return;
-                              mat.transparent = mat.transparent ?? false;
-                              mat.side = THREE.DoubleSide;
-
-                              const hasAlphaTexture =
-                                !!mat.alphaMap ||
-                                (typeof mat.alphaTest === "number" && mat.alphaTest > 0) ||
-                                mat.transparent === true ||
-                                (typeof mat.opacity === "number" && mat.opacity < 1);
-
-                              if (hasAlphaTexture) {
-                                mat.alphaTest = 0;
-                                mat.transparent = true;
-                                mat.depthWrite = false;
-                                mat.depthTest = false;
-                                if (mat.map) {
-                                  try {
-                                    mat.map.generateMipmaps = false;
-                                    mat.map.minFilter = THREE.LinearFilter;
-                                    mat.map.magFilter = THREE.LinearFilter;
-                                    mat.map.needsUpdate = true;
-                                  } catch {}
-                                }
-                              } else {
-                                mat.alphaTest = 0;
-                                mat.transparent = false;
-                                mat.depthWrite = true;
-                                mat.depthTest = true;
-                                try {
-                                  if (mat.emissive && typeof mat.emissive.setHex === "function") {
-                                    mat.emissive.setHex(0x222222);
-                                    mat.emissiveIntensity = Math.max(mat.emissiveIntensity ?? 0, 0.35);
-                                  }
-                                } catch {}
-                              }
-
-                              mat.needsUpdate = true;
-                            });
-                          });
-
-                          const createInstance = (anchor: typeof plantAnchors[number]) => {
-                            const ll = uvToLngLat(anchor.uv, quad);
-                            const baseH = (anchor.floor - 1) * FLOOR_HEIGHT_M;
-                            const height = baseH + (anchor.heightOffsetM ?? 0);
-                            const mc = (mapboxgl as any).MercatorCoordinate.fromLngLat({ lng: ll[0], lat: ll[1] }, height);
-                            const originMc = (layer as any)._originMc as any;
-                            const ox = originMc?.x ?? 0;
-                            const oy = originMc?.y ?? 0;
-                            const oz = originMc?.z ?? 0;
-                            const metersToMercator = mc.meterInMercatorCoordinateUnits();
-
-                            const inst = base.clone(true);
-                            const scaleM = anchor.scaleM ?? 1;
-                            const s = metersToMercator * scaleM;
-                            inst.matrixAutoUpdate = false;
-                            const t = new THREE.Matrix4().makeTranslation(mc.x - ox, mc.y - oy, mc.z - oz);
-                            const rX = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-                            const rY = new THREE.Matrix4().makeRotationY(anchor.rotY ?? 0);
-                            const sc = new THREE.Matrix4().makeScale(s, -s, s);
-                            inst.matrix = t.multiply(rX).multiply(rY).multiply(sc);
-                            scene.add(inst);
-                          };
-
-                          plantAnchors.forEach(createInstance);
-                          mapInstance.triggerRepaint();
-                        },
-                        undefined,
-                        () => {
-                          try { console.warn("MapboxScene: failed to load /texture/small_tree.glb"); } catch {}
-                        }
-                      );
-                    }
-
-                    (layer as any)._three = { camera, scene, renderer };
-                  },
-                  render: (gl: WebGLRenderingContext, matrix: number[]) => {
-                    const three = (layer as any)._three;
-                    if (!three) return;
-                    const { camera, scene, renderer } = three as { camera: THREE.Camera; scene: THREE.Scene; renderer: THREE.WebGLRenderer };
-
-                    const mapM = new THREE.Matrix4().fromArray(matrix);
-                    const originMc = (layer as any)._originMc as any;
-                    const originT = new THREE.Matrix4().makeTranslation(originMc?.x ?? 0, originMc?.y ?? 0, originMc?.z ?? 0);
-                    camera.matrixAutoUpdate = false;
-                    camera.matrixWorld.identity();
-                    camera.matrixWorldInverse.identity();
-                    camera.projectionMatrix.copy(mapM.multiply(originT));
-                    try {
-                      (camera as any).projectionMatrixInverse?.copy?.(camera.projectionMatrix)?.invert?.();
-                    } catch {}
-                    try {
-                      (renderer as any).state?.reset?.();
-                    } catch {}
-                    renderer.setRenderTarget(null);
-                    try {
-                      const glc = gl;
-                      // Explicit viewport: prevents deformation when Mapbox changes the drawing buffer.
-                      renderer.setViewport(0, 0, glc.drawingBufferWidth, glc.drawingBufferHeight);
-                      renderer.setScissorTest(false);
-
-                      glc.viewport(0, 0, glc.drawingBufferWidth, glc.drawingBufferHeight);
-                      // Mapbox heavily uses stencil/scissor; make sure those don't interfere with Three.
-                      glc.disable(glc.STENCIL_TEST);
-                      glc.disable(glc.SCISSOR_TEST);
-                      glc.disable(glc.CULL_FACE);
-                      glc.enable(glc.DEPTH_TEST);
-                      glc.depthFunc(glc.LEQUAL);
-                      glc.depthMask(true);
-                      glc.clearDepth(1);
-                      glc.clear(glc.DEPTH_BUFFER_BIT);
-                    } catch {}
-                    renderer.render(scene, camera);
-                  },
-                };
-                if (SHOW_PLANTS) {
-                  map.addLayer(layer);
-                }
-              }
-            }
-          } catch {}
-
           // Center and zoom closer to the building so facade is visible
           try {
             map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
@@ -2409,7 +2149,7 @@ export default function MapboxScene({
         tip.style.top = e.point.y + 12 + "px";
         const fid = (typeof f.id !== 'undefined') ? String(f.id) : (f.properties && f.properties.id ? String(f.properties.id) : null);
         const { floor, status, area, rooms } = f.properties as any;
-        tip.textContent = `Кв. ${fid ?? ''} • этаж ${floor} • ${status} • ${area} м² • ${rooms}к`;
+        tip.textContent = `╨Ъ╨▓. ${fid ?? ''} тАв ╤Н╤В╨░╨╢ ${floor} тАв ${status} тАв ${area} ╨╝┬▓ тАв ${rooms}╨║`;
         if (fid && lastHoverId !== fid) {
           if (lastHoverId) {
             map.setFeatureState({ source: "units", id: lastHoverId }, { hover: false });
@@ -2482,11 +2222,11 @@ export default function MapboxScene({
     return () => { mapRef.current?.remove(); };
   }, [token, center, onPick]);
 
-  // Применение фильтра (available/rooms/floor)
+  // ╨Я╤А╨╕╨╝╨╡╨╜╨╡╨╜╨╕╨╡ ╤Д╨╕╨╗╤М╤В╤А╨░ (available/rooms/floor)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const filters: any[] = ["all"]; // базовый фильтр для слоя
+    const filters: any[] = ["all"]; // ╨▒╨░╨╖╨╛╨▓╤Л╨╣ ╤Д╨╕╨╗╤М╤В╤А ╨┤╨╗╤П ╤Б╨╗╨╛╤П
     if (filter.onlyAvailable) filters.push(["==", ["get", "status"], "available"]);
     if (filter.rooms) filters.push(["==", ["get", "rooms"], filter.rooms]);
     if (filter.hoverFloor) filters.push(["==", ["get", "floor"], filter.hoverFloor]);
@@ -2498,7 +2238,7 @@ export default function MapboxScene({
   if (!token) {
     return (
       <div className="relative w-full max-w-[1100px] mx-auto rounded-xl overflow-hidden ring-1 ring-border bg-surface p-6 text-sm text-muted">
-        Добавьте NEXT_PUBLIC_MAPBOX_TOKEN в .env.local, чтобы отобразить карту с окружением.
+        ╨Ф╨╛╨▒╨░╨▓╤М╤В╨╡ NEXT_PUBLIC_MAPBOX_TOKEN ╨▓ .env.local, ╤З╤В╨╛╨▒╤Л ╨╛╤В╨╛╨▒╤А╨░╨╖╨╕╤В╤М ╨║╨░╤А╤В╤Г ╤Б ╨╛╨║╤А╤Г╨╢╨╡╨╜╨╕╨╡╨╝.
       </div>
     );
   }
@@ -2704,7 +2444,7 @@ function filterCornerPoints(points: [number, number][]): [number, number][] {
   const corners: [number, number][] = [];
   const len = points.length;
   const maxCorners = Math.min(6, len);
-  const minDot = Math.cos((130 * Math.PI) / 180); // require > ~50° turn
+  const minDot = Math.cos((130 * Math.PI) / 180); // require > ~50┬░ turn
 
   const addIfFar = (pt: [number, number]) => {
     const minDist = estimatePostSize(points) * 0.6;
