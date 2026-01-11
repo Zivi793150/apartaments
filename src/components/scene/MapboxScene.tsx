@@ -1814,13 +1814,93 @@ export default function MapboxScene({
         style: styleConfig as any,
         center: center as LngLatLike,
         zoom: 17.6,
-        pitch: 60,
-        bearing: -20,
+        pitch: 58,
+        bearing: 32,
         antialias: true,
         cooperativeGestures: true,
       });
         mapRef.current = map;
         try { (window as any).__debugMap = map; } catch {}
+
+        // Controls: rotate with LMB (bearing + pitch). We disable default dragRotate to avoid conflicts.
+        try {
+          map.dragRotate.disable();
+        } catch {}
+        try {
+          // If it was enabled somewhere else, keep it off.
+          map.touchZoomRotate.disableRotation();
+        } catch {}
+
+        try {
+          const canvas = map.getCanvas();
+          let rotating = false;
+          let suppressContextMenuUntil = 0;
+          let startX = 0;
+          let startY = 0;
+          let startBearing = 0;
+          let startPitch = 0;
+
+          const onDown = (e: PointerEvent) => {
+            // RMB only: avoids accidental apartment clicks while rotating
+            if (e.button !== 2) return;
+            rotating = true;
+            suppressContextMenuUntil = (typeof performance !== "undefined" ? performance.now() : Date.now()) + 800;
+            startX = e.clientX;
+            startY = e.clientY;
+            startBearing = map.getBearing();
+            startPitch = map.getPitch();
+            try { map.dragPan.disable(); } catch {}
+            try { canvas.setPointerCapture(e.pointerId); } catch {}
+            try { e.preventDefault(); } catch {}
+          };
+
+          const onMove = (e: PointerEvent) => {
+            if (!rotating) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            const bearing = startBearing + dx * 0.25;
+            const pitch = Math.max(15, Math.min(80, startPitch - dy * 0.15));
+            try {
+              map.setBearing(bearing);
+              map.setPitch(pitch);
+            } catch {}
+            try { e.preventDefault(); } catch {}
+          };
+
+          const onUp = (e: PointerEvent) => {
+            if (!rotating) return;
+            rotating = false;
+            try { map.dragPan.enable(); } catch {}
+            try { canvas.releasePointerCapture(e.pointerId); } catch {}
+            try { e.preventDefault(); } catch {}
+          };
+
+          const onContextMenu = (e: MouseEvent) => {
+            // When using RMB-drag for rotate, suppress the browser context menu.
+            const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+            if (rotating || now < suppressContextMenuUntil) {
+              try { e.preventDefault(); } catch {}
+              return;
+            }
+            // Also suppress context menu on the map canvas in general, since RMB is reserved for camera controls.
+            try { e.preventDefault(); } catch {}
+          };
+
+          canvas.addEventListener("pointerdown", onDown, { passive: false });
+          canvas.addEventListener("pointermove", onMove, { passive: false });
+          canvas.addEventListener("pointerup", onUp, { passive: false });
+          canvas.addEventListener("pointercancel", onUp, { passive: false });
+          canvas.addEventListener("contextmenu", onContextMenu, { passive: false });
+
+          // Cleanup on map remove
+          map.once("remove", () => {
+            try { canvas.removeEventListener("pointerdown", onDown as any); } catch {}
+            try { canvas.removeEventListener("pointermove", onMove as any); } catch {}
+            try { canvas.removeEventListener("pointerup", onUp as any); } catch {}
+            try { canvas.removeEventListener("pointercancel", onUp as any); } catch {}
+            try { canvas.removeEventListener("contextmenu", onContextMenu as any); } catch {}
+          });
+        } catch {}
 
         map.on("load", () => {
           try {
@@ -2387,7 +2467,7 @@ export default function MapboxScene({
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.jumpTo({ center: center as LngLatLike, zoom: 19.2, pitch: 68, bearing: -8 });
+            map.easeTo({ center: center as LngLatLike, zoom: 18.9, pitch: 62, bearing: 28, duration: 900, essential: true });
           } catch(e) {}
 
           } catch (e) {

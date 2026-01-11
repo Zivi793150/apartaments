@@ -2,7 +2,6 @@
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import type { PickedUnit } from "./BuildingScene3D";
 import MapboxScene, { type MapboxSceneFilter, type MapboxPickedUnit } from "./MapboxScene";
-import BuildingHotspots from "./BuildingHotspots";
 import { motion, AnimatePresence } from "framer-motion";
 import { Heart, X, ExternalLink, Maximize2 } from "lucide-react";
 import { useFavorites, type FavoriteApartment } from "@/components/sections/FavoritesBar";
@@ -14,13 +13,8 @@ function parseId(id: string) {
   return { building: parts[0] ?? "", floor: parts[1] ?? "", unit: parts[2] ?? "" };
 }
 
-const buildingTabs = [
-  { k: "a", t: "Блок A" },
-  { k: "b", t: "Блок B" },
-];
-
 export default function EstateBrowser3D() {
-const [filter, setFilter] = useState<MapboxSceneFilter>({ activeBuilding: "a", rooms: null, onlyAvailable: false, hoverFloor: null });
+const [filter, setFilter] = useState<MapboxSceneFilter>({ activeBuilding: "all", rooms: null, onlyAvailable: false, hoverFloor: null });
   const [picked, setPicked] = useState<PickedUnit>(null);
   const [showQuickView, setShowQuickView] = useState(false);
 const { addFavorite, removeFavorite, isFavorite } = useFavorites();
@@ -47,114 +41,9 @@ const { addFavorite, removeFavorite, isFavorite } = useFavorites();
   return (
     <div>
       <div className="relative">
-        {/* Top controls above scene - упрощенные на мобильных */}
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="absolute z-10 left-0 right-0 top-2 md:top-3 flex items-center justify-center gap-2 md:gap-3 px-2"
-        >
-          <div className="inline-flex bg-background/90 backdrop-blur-md rounded-full ring-1 ring-border/60 p-0.5 md:p-1 shadow-lg">
-            {buildingTabs.map(({ k, t }, idx) => (
-              <motion.div
-                key={k}
-                className="relative"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: idx * 0.1, type: "spring", stiffness: 300, damping: 20 }}
-                whileHover="hover"
-              >
-                <motion.button
-                  onClick={() => set({ activeBuilding: k as any })}
-                  aria-pressed={filter.activeBuilding===k}
-                  whileTap={{ scale: 0.92 }}
-                  className={`px-3 py-1 md:px-4 md:py-1.5 text-xs md:text-sm rounded-full transition-all duration-300 font-semibold relative ${
-                    filter.activeBuilding===k
-                      ? "bg-gradient-brand text-white shadow-md"
-                      : "text-muted hover:text-foreground hover:bg-surface/50"
-                  }`}
-                  animate={{
-                    scale: filter.activeBuilding === k ? 1.02 : 1,
-                  }}
-                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                >
-                  <span className="hidden sm:inline">{t}</span>
-                  <span className="sm:hidden">{k.toUpperCase()}</span>
-                </motion.button>
-                {/* Parking tooltip - только на десктопе */}
-                <motion.div
-                  variants={{
-                    hover: { 
-                      opacity: 1, 
-                      y: 0, 
-                      scale: 1,
-                      pointerEvents: "auto",
-                      transition: { type: "spring", stiffness: 400, damping: 25 }
-                    },
-                    rest: { 
-                      opacity: 0, 
-                      y: -8, 
-                      scale: 0.9,
-                      pointerEvents: "none",
-                      transition: { duration: 0.15 }
-                    }
-                  }}
-                  className="hidden md:block absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-1.5 rounded-lg bg-gradient-brand text-white text-xs font-bold whitespace-nowrap shadow-xl z-50"
-                >
-                  {k === "a" ? "✓ С паркингом" : "Без паркинга"}
-                  <motion.div 
-                    className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45"
-                    style={{ 
-                      background: 'linear-gradient(135deg, #FF8A55 0%, #E0703E 60%, #C25E32 100%)'
-                    }}
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 0.1 }}
-                  />
-                </motion.div>
-                {/* Badge на мобильных */}
-                {filter.activeBuilding === k && (
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="md:hidden absolute -top-1 -right-1 w-2 h-2 rounded-full bg-brand ring-2 ring-background"
-                  />
-                )}
-              </motion.div>
-            ))}
-          </div>
-          <motion.button 
-            onClick={() => set({ onlyAvailable: !filter.onlyAvailable })} 
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ 
-              opacity: 1, 
-              x: 0,
-              scale: filter.onlyAvailable ? 1.02 : 1,
-            }}
-            transition={{ delay: 0.3, type: "spring", stiffness: 300, damping: 20 }}
-            whileTap={{ scale: 0.92 }}
-            whileHover={{ scale: 1.02 }}
-            className={`px-3 py-1 md:px-4 md:py-1.5 rounded-full text-xs md:text-sm ring-1 shadow-md transition-all duration-300 font-semibold ${
-              filter.onlyAvailable
-                ? "bg-gradient-brand text-white ring-brand shadow-lg"
-                : "ring-border/60 bg-background/90 backdrop-blur-md hover:bg-surface/50 text-muted"
-            }`}
-          >
-            <span className="hidden sm:inline">Свободные</span>
-            <span className="sm:hidden">✓</span>
-          </motion.button>
-        </motion.div>
-
 <MapboxScene 
           filter={filter} 
           onPick={(u: MapboxPickedUnit) => setPicked(u as any)}
-        />
-        
-        {/* Animated hotspots/hints */}
-        <BuildingHotspots 
-          activeBuilding={filter.activeBuilding} 
-          onHotspotClick={(hotspot) => {
-            set({ hoverFloor: hotspot.floor });
-          }}
         />
       </div>
 
