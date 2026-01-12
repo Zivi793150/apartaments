@@ -1537,7 +1537,13 @@ export default function MapboxScene({
   const tipRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
   const hasCustomFootprint = useRef(false);
+  const lastCameraCenterKey = useRef<string>("");
   const [unitsTransform, setUnitsTransform] = useState<UnitsTransform | null>(null);
+
+  const cameraOffsetXForMap = (map: Map) => {
+    const w = (map.getCanvas() as any)?.clientWidth ?? 0;
+    return Math.round(w * 0.07);
+  };
 
   const center = useMemo<[number, number]>(() => {
     const lat = parseFloat(process.env.NEXT_PUBLIC_BUILDING_LAT || "36.7696");
@@ -1780,6 +1786,8 @@ export default function MapboxScene({
     if (!containerRef.current || mapRef.current || !token) return;
     mapboxgl.accessToken = token;
 
+    const cameraCenter = centroidOfPolygon(footprint);
+
     const styleUrl = "https://api.mapbox.com/styles/v1/mapbox/standard?access_token=" + token;
 
     const prepareStyle = async () => {
@@ -1811,10 +1819,10 @@ export default function MapboxScene({
       const map = new mapboxgl.Map({
         container: containerRef.current as HTMLElement,
         style: styleConfig as any,
-        center: center as LngLatLike,
+        center: cameraCenter as LngLatLike,
         zoom: 17.6,
-        pitch: 58,
-        bearing: 32,
+        pitch: 64,
+        bearing: 280,
         antialias: true,
         cooperativeGestures: true,
       });
@@ -1839,6 +1847,14 @@ export default function MapboxScene({
           let startBearing = 0;
           let startPitch = 0;
 
+          const onDocContextMenu = (e: MouseEvent) => {
+            const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+            if (rotating || now < suppressContextMenuUntil) {
+              try { e.preventDefault(); } catch {}
+              try { e.stopPropagation(); } catch {}
+            }
+          };
+
           const onDown = (e: PointerEvent) => {
             // RMB only: avoids accidental apartment clicks while rotating
             if (e.button !== 2) return;
@@ -1851,6 +1867,7 @@ export default function MapboxScene({
             try { map.dragPan.disable(); } catch {}
             try { canvas.setPointerCapture(e.pointerId); } catch {}
             try { e.preventDefault(); } catch {}
+            try { document.addEventListener("contextmenu", onDocContextMenu, true); } catch {}
           };
 
           const onMove = (e: PointerEvent) => {
@@ -1872,6 +1889,7 @@ export default function MapboxScene({
             try { map.dragPan.enable(); } catch {}
             try { canvas.releasePointerCapture(e.pointerId); } catch {}
             try { e.preventDefault(); } catch {}
+            try { document.removeEventListener("contextmenu", onDocContextMenu, true); } catch {}
           };
 
           const onContextMenu = (e: MouseEvent) => {
@@ -1889,7 +1907,7 @@ export default function MapboxScene({
           canvas.addEventListener("pointermove", onMove, { passive: false });
           canvas.addEventListener("pointerup", onUp, { passive: false });
           canvas.addEventListener("pointercancel", onUp, { passive: false });
-          canvas.addEventListener("contextmenu", onContextMenu, { passive: false });
+          canvas.addEventListener("contextmenu", onContextMenu, { passive: false, capture: true } as any);
 
           // Cleanup on map remove
           map.once("remove", () => {
@@ -1898,6 +1916,7 @@ export default function MapboxScene({
             try { canvas.removeEventListener("pointerup", onUp as any); } catch {}
             try { canvas.removeEventListener("pointercancel", onUp as any); } catch {}
             try { canvas.removeEventListener("contextmenu", onContextMenu as any); } catch {}
+            try { document.removeEventListener("contextmenu", onDocContextMenu, true); } catch {}
           });
         } catch {}
 
@@ -2466,7 +2485,7 @@ export default function MapboxScene({
 
           // Center and zoom closer to the building so facade is visible
           try {
-            map.easeTo({ center: center as LngLatLike, zoom: 18.9, pitch: 62, bearing: 28, duration: 900, essential: true });
+            map.easeTo({ center: cameraCenter as LngLatLike, zoom: 19.1, pitch: 66, bearing: 280, offset: [cameraOffsetXForMap(map), 0] as any, duration: 900, essential: true });
           } catch(e) {}
 
           } catch (e) {
@@ -2560,6 +2579,29 @@ export default function MapboxScene({
 
     return () => { mapRef.current?.remove(); };
   }, [token, center, onPick]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!Array.isArray(footprint) || footprint.length < 3) return;
+
+    const cameraCenter = centroidOfPolygon(footprint);
+    const key = `${cameraCenter[0].toFixed(10)},${cameraCenter[1].toFixed(10)}`;
+    if (key === lastCameraCenterKey.current) return;
+    lastCameraCenterKey.current = key;
+
+    try {
+      map.easeTo({
+        center: cameraCenter as LngLatLike,
+        zoom: map.getZoom(),
+        pitch: map.getPitch(),
+        bearing: map.getBearing(),
+        offset: [cameraOffsetXForMap(map), 0] as any,
+        duration: 450,
+        essential: true,
+      });
+    } catch {}
+  }, [footprint]);
 
   // Применение фильтра (available/rooms/floor)
   useEffect(() => {
