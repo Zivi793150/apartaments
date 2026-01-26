@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "balcon",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "fid": 2, "floor": 2, "id": "balcony-l3", "type": "balcon", "height": 2, "base": 1 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ -4.038977018970618, 36.773148324146057 ], [ -4.03894570208469, 36.773144414447408 ], [ -4.038917398975586, 36.773002252398129 ], [ -4.038953101138833, 36.772998437018082 ], [ -4.038977018970618, 36.773148324146057 ] ] ] } },
+{ "type": "Feature", "properties": { "fid": 3, "floor": 3, "id": "balcony-l2", "type": "balcon", "height": 2, "base": 1 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ -4.03895310113883, 36.772998437029855 ], [ -4.038977018968882, 36.77314832413763 ], [ -4.03894570207552, 36.773144414443202 ], [ -4.038917399025901, 36.773002252398186 ], [ -4.03895310113883, 36.772998437029855 ] ] ] } }
+]
+}
